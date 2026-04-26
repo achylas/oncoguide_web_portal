@@ -14,20 +14,20 @@ function StatCard({ label, value, icon, gradient, change, loading }) {
           {icon}
         </div>
         {change !== undefined && !loading && (
-          <span className="badge bg-emerald-50 text-emerald-600 text-xs">
+          <span className="badge bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs">
             +{change} this week
           </span>
         )}
       </div>
       {loading ? (
         <div className="space-y-2">
-          <div className="h-8 w-20 bg-gray-100 rounded-lg animate-pulse" />
-          <div className="h-3 w-28 bg-gray-100 rounded animate-pulse" />
+          <div className="h-8 w-20 bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse" />
+          <div className="h-3 w-28 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
         </div>
       ) : (
         <>
-          <p className="text-3xl font-bold text-gray-900 tracking-tight">{value}</p>
-          <p className="text-gray-500 text-sm mt-0.5 font-medium">{label}</p>
+          <p className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{value}</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5 font-medium">{label}</p>
         </>
       )}
     </div>
@@ -44,22 +44,22 @@ function PatientRow({ patient }) {
   return (
     <Link
       to={`/patients/${patient.id}`}
-      className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50/80 transition-colors group"
+      className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50/80 dark:hover:bg-gray-800/60 transition-colors group"
     >
       <div className="w-10 h-10 rounded-xl bg-brand flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
         {initials}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-gray-900 text-sm truncate group-hover:text-rose-600 transition-colors">
+        <p className="font-semibold text-gray-900 dark:text-white text-sm truncate group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
           {patient.name}
         </p>
-        <p className="text-gray-400 text-xs mt-0.5">
+        <p className="text-gray-400 dark:text-gray-500 text-xs mt-0.5">
           Age {patient.age ?? '—'} · BMI {patient.clinicalAssessment?.imc ?? '—'}
         </p>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        <span className="text-gray-400 text-xs">{date}</span>
-        <svg className="w-4 h-4 text-gray-300 group-hover:text-rose-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <span className="text-gray-400 dark:text-gray-500 text-xs">{date}</span>
+        <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-rose-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </div>
@@ -142,8 +142,8 @@ export default function Dashboard() {
       {/* Page header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <p className="text-gray-400 text-sm font-medium">{greeting},</p>
-          <h1 className="text-2xl font-bold text-gray-900 mt-0.5">
+          <p className="text-gray-400 dark:text-gray-500 text-sm font-medium">{greeting},</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
             {profile?.name ?? 'Radiologist'} 👋
           </h1>
         </div>
@@ -165,10 +165,10 @@ export default function Dashboard() {
 
         {/* Recent patients */}
         <div className="xl:col-span-2 card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
             <div>
-              <h2 className="font-bold text-gray-900">Recent Patients</h2>
-              <p className="text-gray-400 text-xs mt-0.5">Latest registered records</p>
+              <h2 className="font-bold text-gray-900 dark:text-white">Recent Patients</h2>
+              <p className="text-gray-400 dark:text-gray-500 text-xs mt-0.5">Latest registered records</p>
             </div>
             <Link to="/patients" className="text-rose-500 text-sm font-semibold hover:text-rose-600 transition-colors flex items-center gap-1">
               View all
@@ -178,27 +178,27 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-50 dark:divide-gray-800/60">
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-4 px-5 py-3.5">
-                  <div className="w-10 h-10 bg-gray-100 rounded-xl animate-pulse flex-shrink-0" />
+                  <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse flex-shrink-0" />
                   <div className="flex-1 space-y-1.5">
-                    <div className="h-3.5 bg-gray-100 rounded w-1/3 animate-pulse" />
-                    <div className="h-3 bg-gray-100 rounded w-1/4 animate-pulse" />
+                    <div className="h-3.5 bg-gray-100 dark:bg-gray-800 rounded w-1/3 animate-pulse" />
+                    <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-1/4 animate-pulse" />
                   </div>
-                  <div className="h-3 bg-gray-100 rounded w-12 animate-pulse" />
+                  <div className="h-3 bg-gray-100 dark:bg-gray-800 rounded w-12 animate-pulse" />
                 </div>
               ))
             ) : recentPatients.length === 0 ? (
               <div className="py-16 text-center">
-                <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <div className="w-14 h-14 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
                   <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 </div>
-                <p className="text-gray-600 font-semibold">No patients yet</p>
-                <p className="text-gray-400 text-sm mt-1">Add your first patient to get started</p>
+                <p className="text-gray-600 dark:text-gray-400 font-semibold">No patients yet</p>
+                <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">Add your first patient to get started</p>
                 <Link to="/patients/add" className="btn-primary mt-4 text-sm">Add Patient</Link>
               </div>
             ) : (
@@ -211,7 +211,7 @@ export default function Dashboard() {
         <div className="space-y-5">
           {/* Quick actions */}
           <div className="card p-5">
-            <h2 className="font-bold text-gray-900 mb-4">Quick Actions</h2>
+            <h2 className="font-bold text-gray-900 dark:text-white mb-4">Quick Actions</h2>
             <div className="space-y-2.5">
               <Link
                 to="/patients/add"
@@ -230,16 +230,16 @@ export default function Dashboard() {
 
               <Link
                 to="/patients"
-                className="flex items-center gap-3.5 p-3.5 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-100"
+                className="flex items-center gap-3.5 p-3.5 rounded-xl bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-100 dark:border-gray-700"
               >
-                <div className="w-8 h-8 bg-white rounded-lg border border-gray-200 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-8 h-8 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="font-semibold text-sm text-gray-800">Browse Patients</p>
-                  <p className="text-gray-400 text-xs">Search & filter records</p>
+                  <p className="font-semibold text-sm text-gray-800 dark:text-gray-200">Browse Patients</p>
+                  <p className="text-gray-400 dark:text-gray-500 text-xs">Search & filter records</p>
                 </div>
               </Link>
             </div>
@@ -265,7 +265,7 @@ export default function Dashboard() {
           {/* Summary */}
           {!loading && (
             <div className="card p-5">
-              <h3 className="font-bold text-gray-900 text-sm mb-3">Image Summary</h3>
+              <h3 className="font-bold text-gray-900 dark:text-white text-sm mb-3">Image Summary</h3>
               <div className="space-y-3">
                 <ProgressBar label="Mammograms" value={stats.mammograms} total={stats.mammograms + stats.ultrasounds} color="bg-rose-500" />
                 <ProgressBar label="Ultrasounds" value={stats.ultrasounds} total={stats.mammograms + stats.ultrasounds} color="bg-violet-500" />
@@ -283,10 +283,10 @@ function ProgressBar({ label, value, total, color }) {
   return (
     <div>
       <div className="flex justify-between text-xs mb-1.5">
-        <span className="text-gray-600 font-medium">{label}</span>
-        <span className="text-gray-400">{value} ({pct}%)</span>
+        <span className="text-gray-600 dark:text-gray-400 font-medium">{label}</span>
+        <span className="text-gray-400 dark:text-gray-500">{value} ({pct}%)</span>
       </div>
-      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
     </div>

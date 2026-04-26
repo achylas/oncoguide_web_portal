@@ -51,7 +51,7 @@ export default function AddPatientPage() {
     <PageLayout>
       {/* Back */}
       <button onClick={() => navigate('/patients')}
-        className="flex items-center gap-1.5 text-gray-400 hover:text-gray-700 text-sm mb-5 transition-colors font-medium">
+        className="flex items-center gap-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-sm mb-5 transition-colors font-medium">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
@@ -59,8 +59,8 @@ export default function AddPatientPage() {
       </button>
 
       <div className="mb-7">
-        <h1 className="text-2xl font-bold text-gray-900">Add New Patient</h1>
-        <p className="text-gray-400 text-sm mt-0.5">Complete all 3 steps to register the patient</p>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Patient</h1>
+        <p className="text-gray-400 dark:text-gray-500 text-sm mt-0.5">Complete all 3 steps to register the patient</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -73,16 +73,16 @@ export default function AddPatientPage() {
                 onClick={() => i < step && setStep(i)}
                 className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all ${
                   i === step
-                    ? 'bg-gradient-to-r from-rose-50 to-violet-50 border border-rose-100'
+                    ? 'bg-gradient-to-r from-rose-50 to-violet-50 dark:from-rose-900/20 dark:to-violet-900/20 border border-rose-100 dark:border-rose-900/40'
                     : i < step
-                    ? 'hover:bg-gray-50 cursor-pointer'
+                    ? 'hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer'
                     : 'opacity-50 cursor-not-allowed'
                 }`}
               >
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                  i < step  ? 'bg-emerald-500 text-white' :
+                  i < step   ? 'bg-emerald-500 text-white' :
                   i === step ? 'bg-brand text-white' :
-                               'bg-gray-100 text-gray-400'
+                               'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
                 }`}>
                   {i < step ? (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,10 +91,14 @@ export default function AddPatientPage() {
                   ) : s.icon}
                 </div>
                 <div className="min-w-0">
-                  <p className={`text-sm font-semibold truncate ${i === step ? 'text-rose-600' : i < step ? 'text-gray-700' : 'text-gray-400'}`}>
+                  <p className={`text-sm font-semibold truncate ${
+                    i === step ? 'text-rose-600 dark:text-rose-400' :
+                    i < step   ? 'text-gray-700 dark:text-gray-300' :
+                                 'text-gray-400 dark:text-gray-600'
+                  }`}>
                     {s.label}
                   </p>
-                  <p className="text-xs text-gray-400 truncate">{s.desc}</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-600 truncate">{s.desc}</p>
                 </div>
               </button>
             ))}
@@ -124,7 +128,7 @@ export default function AddPatientPage() {
               {step === 2 && <Step3 form={form} set={set} />}
 
               {error && (
-                <div className="mt-5 flex items-start gap-2.5 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">
+                <div className="mt-5 flex items-start gap-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm rounded-xl px-4 py-3">
                   <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -134,7 +138,7 @@ export default function AddPatientPage() {
             </div>
 
             {/* Footer nav */}
-            <div className="px-6 pb-6 flex gap-3 border-t border-gray-100 pt-5">
+            <div className="px-6 pb-6 flex gap-3 border-t border-gray-100 dark:border-gray-800 pt-5">
               {step > 0 && (
                 <button onClick={() => setStep(s => s - 1)} className="btn-secondary flex-1">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -196,8 +200,8 @@ function TextArea({ label, hint, value, onChange }) {
 
 function Section({ title, children }) {
   return (
-    <div className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">{title}</p>
+    <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-5 border border-gray-100 dark:border-gray-700">
+      <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4">{title}</p>
       <div className="space-y-4">{children}</div>
     </div>
   );
@@ -214,7 +218,7 @@ function Step1({ form, set }) {
         <Field label="Weight (kg)" hint="e.g. 65" value={form.weight} onChange={v => set('weight', v)} type="number" />
       </div>
       <Field label="BMI (IMC)" hint="Body Mass Index e.g. 23.5" value={form.imc} onChange={v => set('imc', v)} type="number" />
-      <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-blue-600 text-sm">
+      <div className="flex items-start gap-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 rounded-xl px-4 py-3 text-blue-600 dark:text-blue-400 text-sm">
         <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
@@ -243,7 +247,7 @@ function Step2({ form, set }) {
       <Section title="Clinical Assessment">
         <Field label="Number of Biopsies" hint="Total biopsies performed" value={form.biopsies} onChange={v => set('biopsies', v)} type="number" />
       </Section>
-      <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-amber-700 text-sm">
+      <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/40 rounded-xl px-4 py-3 text-amber-700 dark:text-amber-400 text-sm">
         <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
         </svg>
@@ -260,7 +264,7 @@ function Step3({ form, set }) {
       <TextArea label="Medical History"     hint="Previous diagnoses, surgeries, conditions"   value={form.history}     onChange={v => set('history', v)} />
       <TextArea label="Current Medications" hint="List all current medications and dosages"    value={form.medications} onChange={v => set('medications', v)} />
       <TextArea label="Additional Notes"    hint="Any other relevant information"              value={form.comments}    onChange={v => set('comments', v)} />
-      <div className="flex items-start gap-2.5 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 text-emerald-700 text-sm">
+      <div className="flex items-start gap-2.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/40 rounded-xl px-4 py-3 text-emerald-700 dark:text-emerald-400 text-sm">
         <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>

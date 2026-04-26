@@ -12,19 +12,29 @@
     background-color: #f4f6fb;
     color: #111827;
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .dark body {
+    background-color: #0f1117;
+    color: #f1f5f9;
   }
 
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
   ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+  .dark ::-webkit-scrollbar-thumb { background: #374151; }
 }
 
 @layer components {
+  /* ── Card ── */
   .card {
-    @apply bg-white rounded-2xl border border-gray-100 shadow-sm;
+    @apply bg-white rounded-2xl border border-gray-100 shadow-sm
+           dark:bg-gray-900 dark:border-gray-800 dark:shadow-dark-card;
   }
 
+  /* ── Buttons ── */
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
            bg-gradient-to-r from-rose-500 to-violet-600
@@ -37,21 +47,36 @@
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-2 px-5 py-2.5
            bg-white border-2 border-gray-200 text-gray-700 text-sm font-semibold rounded-xl
-           hover:border-gray-300 hover:bg-gray-50 transition-all duration-150;
+           hover:border-gray-300 hover:bg-gray-50 transition-all duration-150
+           dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200
+           dark:hover:bg-gray-700 dark:hover:border-gray-600;
   }
 
+  /* ── Input ── */
   .input {
     @apply w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm
-           bg-gray-50 focus:bg-white focus:outline-none
+           bg-gray-50 text-gray-900
+           focus:bg-white focus:outline-none
            focus:ring-2 focus:ring-rose-300 focus:border-transparent
-           placeholder:text-gray-400 transition-all duration-150;
+           placeholder:text-gray-400 transition-all duration-150
+           dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100
+           dark:placeholder:text-gray-500
+           dark:focus:bg-gray-800 dark:focus:ring-rose-500/40;
   }
 
+  /* ── Label ── */
   .label {
-    @apply block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5;
+    @apply block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5
+           dark:text-gray-400;
   }
 
+  /* ── Badge ── */
   .badge {
     @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+
+  /* ── Page background ── */
+  .page-bg {
+    @apply bg-[#f4f6fb] dark:bg-[#0f1117];
   }
 }
