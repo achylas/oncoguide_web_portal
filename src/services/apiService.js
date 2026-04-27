@@ -94,26 +94,43 @@ export async function analyzeUltrasound(file) {
 // ── Tabular risk prediction ────────────────────────────────────────────────────
 
 /**
- * @param {object} patientData — patient clinical fields
+ * @param {object} patientData — patient clinical fields (supports both flat and nested web portal schema)
  * @returns {{ prediction, probability, risk_label, risk_percentage, shap_values, base_value }}
  */
 export async function predictTabular(patientData) {
-  // Map web patient schema → backend feature names
+  const repro    = patientData.reproductive    ?? {};
+  const clinical = patientData.clinicalAssessment ?? {};
+  const lifestyle = patientData.lifestyle      ?? {};
+
+  // ── family history: stored as nested object by web portal ──────────────
+  const famRaw    = patientData.familyHistory ?? {};
+  const famIsObj  = typeof famRaw === 'object' && famRaw !== null && !Array.isArray(famRaw);
+  const famHistory = famIsObj ? (Number(famRaw.hasHistory) || 0) : (Number(patientData.family_history) || 0);
+  const famCount   = famIsObj ? (Number(famRaw.count)      || 0) : (Number(patientData.family_history_count) || 0);
+  const famDegree  = famIsObj ? (Number(famRaw.degree)     || 0) : (Number(patientData.family_history_degree) || 0);
+
+  // ── breastfeeding: web portal stores months, model needs binary ─────────
+  const bfMonths = Number(repro.breastfeedingMonths) || 0;
+  const bfBinary = bfMonths > 0 ? 1 : (Number(repro.breastfeeding ?? patientData.breastfeeding) || 0);
+
+  // ── exercise: web portal stores in lifestyle.exerciseRegular ───────────
+  const exercise = Number(lifestyle.exerciseRegular ?? patientData.exerciseRegular ?? patientData.exercise_regular) || 0;
+
   const payload = {
-    age:                    Number(patientData.age)                              || 0,
-    menarche:               Number(patientData.reproductive?.menarcheAge)        || 13,
-    menopause:              Number(patientData.reproductive?.menopauseAge)       || 0,
-    agefirst:               Number(patientData.reproductive?.firstChildAge)      || 0,
-    children:               Number(patientData.reproductive?.numberOfChildren)   || 0,
-    breastfeeding:          Number(patientData.reproductive?.breastfeedingMonths) > 0 ? 1 : 0,
-    imc:                    Number(patientData.clinicalAssessment?.imc)          || 25,
-    weight:                 Number(patientData.weight)                           || 60,
-    menopause_status:       patientData.reproductive?.menopauseAge ? 1 : 0,
-    pregnancy:              Number(patientData.reproductive?.numberOfChildren) > 0 ? 1 : 0,
-    family_history:         0,
-    family_history_count:   0,
-    family_history_degree:  0,
-    exercise_regular:       0,
+    age:                    Number(patientData.age)                                                    || 0,
+    menarche:               Number(repro.menarcheAge      ?? repro.menarche      ?? patientData.menarche) || 13,
+    menopause:              Number(repro.menopauseAge     ?? repro.menopause     ?? patientData.menopause) || 0,
+    agefirst:               Number(repro.firstChildAge    ?? repro.ageFirstPregnancy ?? patientData.agefirst) || 0,
+    children:               Number(repro.numberOfChildren ?? patientData.children)                     || 0,
+    breastfeeding:          bfBinary,
+    imc:                    Number(clinical.imc ?? patientData.imc)                                    || 25,
+    weight:                 Number(patientData.weight)                                                 || 60,
+    menopause_status:       repro.menopauseStatus != null ? Number(repro.menopauseStatus) : (repro.menopauseAge ? 1 : 0),
+    pregnancy:              Number(repro.pregnancy ?? patientData.pregnancy)                           || 0,
+    family_history:         famHistory,
+    family_history_count:   famCount,
+    family_history_degree:  famDegree,
+    exercise_regular:       exercise,
   };
 
   const res = await fetch(`${BASE_URL}/predict/tabular`, {
