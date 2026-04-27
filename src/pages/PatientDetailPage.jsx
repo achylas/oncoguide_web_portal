@@ -802,6 +802,17 @@ function ReportCard({ report: r }) {
     : '—';
   const relTime = timeAgo(r.createdAt);
 
+  const hasMammo   = !!r.mammoPrediction;
+  const hasDensity = !!r.densityClass;
+  const hasUs      = !!r.usPrediction;
+
+  // Scan images for this report
+  const scanImages = [
+    r.ccImageUrl       && { url: r.ccImageUrl,       label: 'CC' },
+    r.mloImageUrl      && { url: r.mloImageUrl,      label: 'MLO' },
+    r.ultrasoundUrl    && { url: r.ultrasoundUrl,    label: 'Ultrasound' },
+  ].filter(Boolean);
+
   // Mammogram finding config
   const MAMMO_CFG = {
     Normal:     { color: 'text-emerald-600 dark:text-emerald-400', badge: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500', icon: '✅' },
@@ -809,6 +820,14 @@ function ReportCard({ report: r }) {
     Suspicious: { color: 'text-red-600 dark:text-red-400',         badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400',                 bar: 'bg-red-500',     icon: '🚨' },
   };
   const mc = MAMMO_CFG[r.mammoPrediction] ?? MAMMO_CFG.Normal;
+
+  // Ultrasound finding config
+  const US_CFG = {
+    Malignant: { color: 'text-red-600 dark:text-red-400',         badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400',         bar: 'bg-red-500',     icon: '🚨' },
+    Benign:    { color: 'text-amber-600 dark:text-amber-400',     badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400', bar: 'bg-amber-500',   icon: '⚠️' },
+    Normal:    { color: 'text-emerald-600 dark:text-emerald-400', badge: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500', icon: '✅' },
+  };
+  const uc = US_CFG[r.usPrediction] ?? US_CFG.Normal;
 
   return (
     <div className="card overflow-hidden">
@@ -818,15 +837,41 @@ function ReportCard({ report: r }) {
           <p className="font-bold text-gray-900 dark:text-white text-sm">{r.scanLabel || 'Report'}</p>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{date} · {relTime}</p>
         </div>
-        <span className="badge bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 text-xs">
-          Radiologist
-        </span>
+        <div className="flex items-center gap-2">
+          {r.reportType === 'ultrasound_only' && (
+            <span className="badge bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 text-xs">
+              Ultrasound
+            </span>
+          )}
+          <span className="badge bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 text-xs">
+            Radiologist
+          </span>
+        </div>
       </div>
 
       <div className="p-5 space-y-4">
 
-        {/* ── Mammogram Finding — top, most prominent ── */}
-        {r.mammoPrediction && (
+        {/* ── Uploaded scan images ── */}
+        {scanImages.length > 0 && (
+          <div>
+            <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+              Uploaded Scans
+            </p>
+            <div className="flex gap-2">
+              {scanImages.map((img, i) => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                    <img src={img.url} alt={img.label} className="w-full h-full object-cover" />
+                  </div>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{img.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Mammogram Finding — only if mammogram report ── */}
+        {hasMammo && (
           <div>
             <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
               Mammogram Finding
@@ -847,7 +892,6 @@ function ReportCard({ report: r }) {
                 </span>
               </div>
             </div>
-            {/* Probability mini-bars */}
             {r.mammoProbabilities && (
               <div className="mt-2 space-y-1">
                 {Object.entries(r.mammoProbabilities).map(([cls, pct]) => {
@@ -867,9 +911,43 @@ function ReportCard({ report: r }) {
           </div>
         )}
 
+        {/* ── Ultrasound Finding — only if ultrasound report ── */}
+        {hasUs && (
+          <div>
+            <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+              Ultrasound Finding
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{uc.icon}</span>
+                <p className={`font-black text-xl ${uc.color}`}>{r.usPrediction}</p>
+              </div>
+              <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                {r.usConfidence?.toFixed(0)}% conf
+              </span>
+            </div>
+            {r.usProbabilities && (
+              <div className="mt-2 space-y-1">
+                {Object.entries(r.usProbabilities).map(([cls, pct]) => {
+                  const cfg = US_CFG[cls] ?? US_CFG.Normal;
+                  return (
+                    <div key={cls} className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 dark:text-gray-500 w-20 flex-shrink-0">{cls}</span>
+                      <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${cfg.bar}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className={`text-xs font-bold w-10 text-right ${cfg.color}`}>{pct.toFixed(0)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* ── Density ── */}
-          {r.densityClass && (
+          {/* ── Density — only if mammogram report ── */}
+          {hasDensity && (
             <div>
               <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Breast Density</p>
               <div className="flex items-center gap-2 mb-1.5">
@@ -915,14 +993,15 @@ function ReportCard({ report: r }) {
           )}
         </div>
 
-        {/* Alert for suspicious/high-risk */}
-        {(r.mammoPrediction === 'Suspicious' || di >= 2 || isHighRisk) && (
+        {/* Alert for suspicious/high-risk/malignant */}
+        {(r.mammoPrediction === 'Suspicious' || (hasDensity && di >= 2) || isHighRisk || r.usPrediction === 'Malignant') && (
           <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2.5">
             <span className="text-amber-500 text-sm flex-shrink-0 mt-0.5">⚠️</span>
             <p className="text-amber-700 dark:text-amber-400 text-xs leading-relaxed">
               {r.mammoPrediction === 'Suspicious' && 'Suspicious finding — biopsy required. '}
-              {di >= 3 && 'Extremely dense — MRI recommended. '}
-              {di === 2 && 'Heterogeneous density — supplemental US advised. '}
+              {hasDensity && di >= 3 && 'Extremely dense — MRI recommended. '}
+              {hasDensity && di === 2 && 'Heterogeneous density — supplemental US advised. '}
+              {r.usPrediction === 'Malignant' && 'Malignant ultrasound finding — immediate biopsy required. '}
               {isHighRisk && 'High clinical risk — oncology referral advised.'}
             </p>
           </div>

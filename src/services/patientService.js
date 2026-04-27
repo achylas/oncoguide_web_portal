@@ -89,7 +89,7 @@ const REPORTS = 'radiologist_reports';
 
 /**
  * Save a radiologist-generated report to Firestore.
- * reportType: 'mammogram_density' | 'risk_assessment' | 'combined'
+ * reportType: 'mammogram_density' | 'risk_assessment' | 'combined' | 'ultrasound_only'
  */
 export async function saveRadiologistReport({
   patientId,
@@ -107,6 +107,11 @@ export async function saveRadiologistReport({
   mammoConfidence,
   mammoProbabilities,
   mammoFindingCategory,
+  // ultrasound fields
+  usPrediction,
+  usPredictionIndex,
+  usConfidence,
+  usProbabilities,
   // risk fields
   riskLabel,
   riskPercentage,
@@ -114,6 +119,7 @@ export async function saveRadiologistReport({
   // image refs
   ccImageUrl,
   mloImageUrl,
+  ultrasoundUrl,
   gradcamImage,
   // scan label
   scanLabel,
@@ -123,20 +129,30 @@ export async function saveRadiologistReport({
     patientName,
     radiologistId,
     reportType,
+    // density
     densityClass:         densityClass         ?? null,
     densityLabel:         densityLabel         ?? null,
     densityIndex:         densityIndex         ?? null,
     densityConfidence:    densityConfidence    ?? null,
+    // mammogram finding
     mammoPrediction:      mammoPrediction      ?? null,
     mammoPredictionIndex: mammoPredictionIndex ?? null,
     mammoConfidence:      mammoConfidence      ?? null,
     mammoProbabilities:   mammoProbabilities   ?? null,
     mammoFindingCategory: mammoFindingCategory ?? null,
+    // ultrasound
+    usPrediction:         usPrediction         ?? null,
+    usPredictionIndex:    usPredictionIndex    ?? null,
+    usConfidence:         usConfidence         ?? null,
+    usProbabilities:      usProbabilities      ?? null,
+    // risk
     riskLabel:            riskLabel            ?? null,
     riskPercentage:       riskPercentage       ?? null,
     riskPrediction:       riskPrediction       ?? null,
+    // images
     ccImageUrl:           ccImageUrl           ?? null,
     mloImageUrl:          mloImageUrl          ?? null,
+    ultrasoundUrl:        ultrasoundUrl        ?? null,
     hasGradcam:           !!gradcamImage,
     scanLabel:            scanLabel            ?? 'Report',
     createdAt:            serverTimestamp(),
