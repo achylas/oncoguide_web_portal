@@ -5,8 +5,8 @@ import { validateImage } from '../../services/apiService';
 const VS = { idle: 'idle', checking: 'checking', valid: 'valid', invalid: 'invalid', error: 'error' };
 
 // ── Single image slot ──────────────────────────────────────────────────────────
-function ImageSlot({ slotLabel, slotHint, file, preview, validationState, validationData, dragging,
-  onDragOver, onDragLeave, onDrop, onFileChange, onClear, onValidate, inputRef, disabled }) {
+function ImageSlot({ slotLabel, slotHint, file, preview, validationState, validationData,
+  dragging, onDragOver, onDragLeave, onDrop, onFileChange, onClear, onValidate, inputRef, disabled }) {
 
   const scorePct = Math.round((validationData?.score ?? 0) * 100);
 
@@ -34,9 +34,7 @@ function ImageSlot({ slotLabel, slotHint, file, preview, validationState, valida
 
       {!preview ? (
         <div
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          onDrop={onDrop}
+          onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
           onClick={() => !disabled && inputRef.current?.click()}
           className={`border-2 border-dashed rounded-xl p-5 text-center transition-all ${
             disabled
@@ -71,7 +69,6 @@ function ImageSlot({ slotLabel, slotHint, file, preview, validationState, valida
             className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-xs transition-all">
             ✕
           </button>
-          {/* Validation status overlay */}
           <div className="absolute bottom-1.5 left-1.5 right-1.5">
             {validationState === VS.idle && (
               <button type="button" onClick={onValidate}
@@ -107,19 +104,18 @@ function ImageSlot({ slotLabel, slotHint, file, preview, validationState, valida
 }
 
 // ── Main ImageUploader ─────────────────────────────────────────────────────────
-
 /**
- * ImageUploader
- *
- * Mammogram mode: requires BOTH CC and MLO views before upload is enabled.
- * Ultrasound mode: single image upload.
+ * Supports: mammogram only, ultrasound only, or both together.
+ * Mammogram always requires CC + MLO both validated.
+ * Ultrasound is a single image.
  *
  * onUpload(files, imageType, scanLabel, validationScores)
- *   files = { cc, mlo } for mammogram, { single } for ultrasound
- *   validationScores = { cc, mlo } or { single }
+ *   imageType: 'mammogram' | 'ultrasound' | 'both'
+ *   files: { cc, mlo } | { single } | { cc, mlo, single }
  */
 export default function ImageUploader({ onUpload, uploading = false }) {
-  const [imageType, setImageType] = useState('mammogram');
+  const [wantMammo, setWantMammo] = useState(true);
+  const [wantUs,    setWantUs]    = useState(false);
   const [scanLabel, setScanLabel] = useState('');
 
   // CC slot
@@ -138,16 +134,15 @@ export default function ImageUploader({ onUpload, uploading = false }) {
   const [mloDrag,  setMloDrag]  = useState(false);
   const mloRef = useRef(null);
 
-  // Single slot (ultrasound)
-  const [singleFile,  setSingleFile]  = useState(null);
-  const [singlePrev,  setSinglePrev]  = useState(null);
-  const [singleVS,    setSingleVS]    = useState(VS.idle);
-  const [singleVData, setSingleVData] = useState(null);
-  const [singleDrag,  setSingleDrag]  = useState(false);
-  const singleRef = useRef(null);
+  // Ultrasound slot
+  const [usFile,  setUsFile]  = useState(null);
+  const [usPrev,  setUsPrev]  = useState(null);
+  const [usVS,    setUsVS]    = useState(VS.idle);
+  const [usVData, setUsVData] = useState(null);
+  const [usDrag,  setUsDrag]  = useState(false);
+  const usRef = useRef(null);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-
   const readFile = (f, setFile, setPrev, setVS, setVData) => {
     if (!f) return;
     if (!f.type.startsWith('image/')) { alert('Please select an image file.'); return; }
@@ -176,73 +171,99 @@ export default function ImageUploader({ onUpload, uploading = false }) {
     }
   };
 
-  const handleTypeChange = (type) => {
-    setImageType(type);
-    clearSlot(setCcFile,     setCcPrev,     setCcVS,     setCcVData,     ccRef);
-    clearSlot(setMloFile,    setMloPrev,    setMloVS,    setMloVData,    mloRef);
-    clearSlot(setSingleFile, setSinglePrev, setSingleVS, setSingleVData, singleRef);
+  const clearMammo = () => {
+    clearSlot(setCcFile,  setCcPrev,  setCcVS,  setCcVData,  ccRef);
+    clearSlot(setMloFile, setMloPrev, setMloVS, setMloVData, mloRef);
   };
 
-  // ── Upload readiness ───────────────────────────────────────────────────────
+  const clearUs = () => clearSlot(setUsFile, setUsPrev, setUsVS, setUsVData, usRef);
 
-  const mammogramReady = imageType === 'mammogram' && ccVS === VS.valid && mloVS === VS.valid;
-  const ultrasoundReady = imageType === 'ultrasound' && singleVS === VS.valid;
-  const canUpload = (mammogramReady || ultrasoundReady) && !uploading;
+  const handleToggleMammo = (checked) => {
+    setWantMammo(checked);
+    if (!checked) clearMammo();
+    // Must select at least one
+    if (!checked && !wantUs) setWantUs(true);
+  };
+
+  const handleToggleUs = (checked) => {
+    setWantUs(checked);
+    if (!checked) clearUs();
+    if (!checked && !wantMammo) setWantMammo(true);
+  };
+
+  // ── Readiness ──────────────────────────────────────────────────────────────
+  const mammoReady = !wantMammo || (ccVS === VS.valid && mloVS === VS.valid);
+  const usReady    = !wantUs    || usVS === VS.valid;
+  const canUpload  = (wantMammo || wantUs) && mammoReady && usReady && !uploading;
+
+  // Hint for what's still missing
+  const hints = [];
+  if (wantMammo) {
+    if (!ccFile)              hints.push('Upload CC view');
+    else if (ccVS !== VS.valid)  hints.push('Validate CC view');
+    if (!mloFile)             hints.push('Upload MLO view');
+    else if (mloVS !== VS.valid) hints.push('Validate MLO view');
+  }
+  if (wantUs) {
+    if (!usFile)              hints.push('Upload ultrasound');
+    else if (usVS !== VS.valid)  hints.push('Validate ultrasound');
+  }
 
   const handleUpload = () => {
     if (!canUpload) return;
-    const label = scanLabel.trim() || (imageType === 'mammogram' ? 'Mammogram Scan' : 'Ultrasound Scan');
-    if (imageType === 'mammogram') {
-      onUpload(
-        { cc: ccFile, mlo: mloFile },
-        'mammogram',
-        label,
-        { cc: ccVData?.score ?? 0, mlo: mloVData?.score ?? 0 }
-      );
-    } else {
-      onUpload(
-        { single: singleFile },
-        'ultrasound',
-        label,
-        { single: singleVData?.score ?? 0 }
-      );
-    }
+    const label = scanLabel.trim() || (
+      wantMammo && wantUs ? 'Mammogram + Ultrasound' :
+      wantMammo ? 'Mammogram Scan' : 'Ultrasound Scan'
+    );
+    const files = {};
+    const scores = {};
+    if (wantMammo) { files.cc = ccFile; files.mlo = mloFile; scores.cc = ccVData?.score ?? 0; scores.mlo = mloVData?.score ?? 0; }
+    if (wantUs)    { files.single = usFile; scores.single = usVData?.score ?? 0; }
+    const type = wantMammo && wantUs ? 'both' : wantMammo ? 'mammogram' : 'ultrasound';
+    onUpload(files, type, label, scores);
   };
 
-  // ── Mammogram completeness hint ────────────────────────────────────────────
-  const mammogramHint = () => {
-    if (imageType !== 'mammogram') return null;
-    const ccOk  = ccVS  === VS.valid;
-    const mloOk = mloVS === VS.valid;
-    if (ccOk && mloOk) return null;
-    const missing = [];
-    if (!ccFile)  missing.push('CC view');
-    else if (!ccOk)  missing.push('CC validation');
-    if (!mloFile) missing.push('MLO view');
-    else if (!mloOk) missing.push('MLO validation');
-    return `Required: ${missing.join(' + ')}`;
-  };
-
-  const hint = mammogramHint();
+  const uploadLabel = wantMammo && wantUs ? 'Upload Mammogram + Ultrasound'
+    : wantMammo ? 'Upload Mammogram (CC + MLO)'
+    : 'Upload Ultrasound';
 
   return (
     <div className="space-y-4">
 
-      {/* ── Image type selector ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-2">
-        {[
-          { key: 'mammogram',  label: 'Mammogram (CC + MLO)' },
-          { key: 'ultrasound', label: 'Ultrasound' },
-        ].map(({ key, label }) => (
-          <button key={key} type="button" onClick={() => handleTypeChange(key)}
-            className={`py-2.5 px-3 rounded-xl text-xs font-semibold border-2 transition-all ${
-              imageType === key
-                ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400'
-                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
-            }`}>
-            {label}
-          </button>
-        ))}
+      {/* ── Scan type selector (checkboxes — can pick both) ─────────────────── */}
+      <div>
+        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Scan Type</p>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { key: 'mammo', label: 'Mammogram (CC + MLO)', checked: wantMammo, onChange: handleToggleMammo, color: 'rose' },
+            { key: 'us',    label: 'Ultrasound',           checked: wantUs,    onChange: handleToggleUs,    color: 'violet' },
+          ].map(({ key, label, checked, onChange, color }) => (
+            <button key={key} type="button" onClick={() => onChange(!checked)}
+              className={`flex items-center gap-2.5 py-2.5 px-3 rounded-xl border-2 text-xs font-semibold transition-all text-left ${
+                checked
+                  ? color === 'rose'
+                    ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400'
+                    : 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}>
+              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                checked
+                  ? color === 'rose' ? 'border-rose-500 bg-rose-500' : 'border-violet-500 bg-violet-500'
+                  : 'border-gray-300 dark:border-gray-600'
+              }`}>
+                {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>}
+              </div>
+              {label}
+            </button>
+          ))}
+        </div>
+        {wantMammo && wantUs && (
+          <p className="text-xs text-violet-600 dark:text-violet-400 mt-2 flex items-center gap-1.5 font-medium">
+            <span>✨</span> Multi-modal — mammogram + ultrasound will both be uploaded and analysed together.
+          </p>
+        )}
       </div>
 
       {/* ── Scan label ──────────────────────────────────────────────────────── */}
@@ -254,58 +275,65 @@ export default function ImageUploader({ onUpload, uploading = false }) {
       </div>
 
       {/* ── Mammogram: CC + MLO slots ────────────────────────────────────────── */}
-      {imageType === 'mammogram' && (
-        <div className="grid grid-cols-2 gap-3">
+      {wantMammo && (
+        <div>
+          <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+            Mammogram Views <span className="text-red-400 font-normal normal-case">— both CC and MLO required</span>
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <ImageSlot
+              slotLabel="CC View" slotHint="Cranio-caudal"
+              file={ccFile} preview={ccPrev} validationState={ccVS} validationData={ccVData} dragging={ccDrag}
+              onDragOver={e => { e.preventDefault(); setCcDrag(true); }}
+              onDragLeave={() => setCcDrag(false)}
+              onDrop={e => { e.preventDefault(); setCcDrag(false); readFile(e.dataTransfer.files[0], setCcFile, setCcPrev, setCcVS, setCcVData); }}
+              onFileChange={e => readFile(e.target.files[0], setCcFile, setCcPrev, setCcVS, setCcVData)}
+              onClear={() => clearSlot(setCcFile, setCcPrev, setCcVS, setCcVData, ccRef)}
+              onValidate={() => validate(ccFile, 'mammogram', setCcVS, setCcVData)}
+              inputRef={ccRef} disabled={false}
+            />
+            <ImageSlot
+              slotLabel="MLO View" slotHint="Medio-lateral oblique"
+              file={mloFile} preview={mloPrev} validationState={mloVS} validationData={mloVData} dragging={mloDrag}
+              onDragOver={e => { e.preventDefault(); setMloDrag(true); }}
+              onDragLeave={() => setMloDrag(false)}
+              onDrop={e => { e.preventDefault(); setMloDrag(false); readFile(e.dataTransfer.files[0], setMloFile, setMloPrev, setMloVS, setMloVData); }}
+              onFileChange={e => readFile(e.target.files[0], setMloFile, setMloPrev, setMloVS, setMloVData)}
+              onClear={() => clearSlot(setMloFile, setMloPrev, setMloVS, setMloVData, mloRef)}
+              onValidate={() => validate(mloFile, 'mammogram', setMloVS, setMloVData)}
+              inputRef={mloRef} disabled={false}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Ultrasound slot ──────────────────────────────────────────────────── */}
+      {wantUs && (
+        <div>
+          <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Ultrasound</p>
           <ImageSlot
-            slotLabel="CC View" slotHint="Cranio-caudal"
-            file={ccFile} preview={ccPrev} validationState={ccVS} validationData={ccVData} dragging={ccDrag}
-            onDragOver={e => { e.preventDefault(); setCcDrag(true); }}
-            onDragLeave={() => setCcDrag(false)}
-            onDrop={e => { e.preventDefault(); setCcDrag(false); readFile(e.dataTransfer.files[0], setCcFile, setCcPrev, setCcVS, setCcVData); }}
-            onFileChange={e => readFile(e.target.files[0], setCcFile, setCcPrev, setCcVS, setCcVData)}
-            onClear={() => clearSlot(setCcFile, setCcPrev, setCcVS, setCcVData, ccRef)}
-            onValidate={() => validate(ccFile, 'mammogram', setCcVS, setCcVData)}
-            inputRef={ccRef}
-            disabled={false}
-          />
-          <ImageSlot
-            slotLabel="MLO View" slotHint="Medio-lateral oblique"
-            file={mloFile} preview={mloPrev} validationState={mloVS} validationData={mloVData} dragging={mloDrag}
-            onDragOver={e => { e.preventDefault(); setMloDrag(true); }}
-            onDragLeave={() => setMloDrag(false)}
-            onDrop={e => { e.preventDefault(); setMloDrag(false); readFile(e.dataTransfer.files[0], setMloFile, setMloPrev, setMloVS, setMloVData); }}
-            onFileChange={e => readFile(e.target.files[0], setMloFile, setMloPrev, setMloVS, setMloVData)}
-            onClear={() => clearSlot(setMloFile, setMloPrev, setMloVS, setMloVData, mloRef)}
-            onValidate={() => validate(mloFile, 'mammogram', setMloVS, setMloVData)}
-            inputRef={mloRef}
-            disabled={false}
+            slotLabel="Ultrasound Image" slotHint="Drop image or click to browse"
+            file={usFile} preview={usPrev} validationState={usVS} validationData={usVData} dragging={usDrag}
+            onDragOver={e => { e.preventDefault(); setUsDrag(true); }}
+            onDragLeave={() => setUsDrag(false)}
+            onDrop={e => { e.preventDefault(); setUsDrag(false); readFile(e.dataTransfer.files[0], setUsFile, setUsPrev, setUsVS, setUsVData); }}
+            onFileChange={e => readFile(e.target.files[0], setUsFile, setUsPrev, setUsVS, setUsVData)}
+            onClear={() => clearSlot(setUsFile, setUsPrev, setUsVS, setUsVData, usRef)}
+            onValidate={() => validate(usFile, 'ultrasound', setUsVS, setUsVData)}
+            inputRef={usRef} disabled={false}
           />
         </div>
       )}
 
-      {/* ── Ultrasound: single slot ──────────────────────────────────────────── */}
-      {imageType === 'ultrasound' && (
-        <ImageSlot
-          slotLabel="Ultrasound Image" slotHint="Drop image or click to browse"
-          file={singleFile} preview={singlePrev} validationState={singleVS} validationData={singleVData} dragging={singleDrag}
-          onDragOver={e => { e.preventDefault(); setSingleDrag(true); }}
-          onDragLeave={() => setSingleDrag(false)}
-          onDrop={e => { e.preventDefault(); setSingleDrag(false); readFile(e.dataTransfer.files[0], setSingleFile, setSinglePrev, setSingleVS, setSingleVData); }}
-          onFileChange={e => readFile(e.target.files[0], setSingleFile, setSinglePrev, setSingleVS, setSingleVData)}
-          onClear={() => clearSlot(setSingleFile, setSinglePrev, setSingleVS, setSingleVData, singleRef)}
-          onValidate={() => validate(singleFile, 'ultrasound', setSingleVS, setSingleVData)}
-          inputRef={singleRef}
-          disabled={false}
-        />
-      )}
-
-      {/* ── Hint ────────────────────────────────────────────────────────────── */}
-      {hint && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
-          <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {/* ── Missing items hint ───────────────────────────────────────────────── */}
+      {hints.length > 0 && (
+        <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+          <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <p className="text-amber-700 dark:text-amber-400 text-xs font-medium">{hint}</p>
+          <p className="text-amber-700 dark:text-amber-400 text-xs font-medium">
+            Still needed: {hints.join(' · ')}
+          </p>
         </div>
       )}
 
@@ -320,7 +348,7 @@ export default function ImageUploader({ onUpload, uploading = false }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            Upload {imageType === 'mammogram' ? 'Mammogram (CC + MLO)' : 'Ultrasound'}
+            {uploadLabel}
           </>
         )}
       </button>

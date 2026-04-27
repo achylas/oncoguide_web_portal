@@ -1,33 +1,43 @@
 import { useState, useEffect } from 'react';
-import { analyzeDensity, analyzeMammogram, predictTabular } from '../../services/apiService';
+import { analyzeDensity, analyzeMammogram, analyzeUltrasound, predictTabular } from '../../services/apiService';
 import { saveRadiologistReport } from '../../services/patientService';
 import { useAuth } from '../../context/AuthContext';
 
-// ── Step definitions ───────────────────────────────────────────────────────────
-const STEPS = [
-  { id: 'validate',  label: 'Validating images',           icon: '🔍', detail: 'Checking CC and MLO image quality…' },
-  { id: 'mammo',     label: 'Analysing mammogram finding', icon: '🩻', detail: 'Running EfficientNet-B0 classification…' },
-  { id: 'density',   label: 'Analysing breast density',    icon: '📐', detail: 'Running Siamese EfficientNetV2-S model…' },
-  { id: 'risk',      label: 'Calculating clinical risk',   icon: '📊', detail: 'Running Random Forest + SHAP analysis…' },
-  { id: 'saving',    label: 'Saving report',               icon: '💾', detail: 'Writing to patient records…' },
-  { id: 'done',      label: 'Report complete',             icon: '✅', detail: 'Report saved successfully.' },
-];
+// ── Step definitions — ultrasound step is conditional ─────────────────────────
+function buildSteps(hasUs) {
+  const steps = [
+    { id: 'validate', label: 'Validating images',           icon: '🔍', detail: 'Checking image quality…' },
+    { id: 'mammo',    label: 'Analysing mammogram finding', icon: '🩻', detail: 'Running EfficientNet-B0 classification…' },
+    { id: 'density',  label: 'Analysing breast density',    icon: '📐', detail: 'Running Siamese EfficientNetV2-S model…' },
+  ];
+  if (hasUs) {
+    steps.push({ id: 'ultrasound', label: 'Analysing ultrasound', icon: '🔊', detail: 'Running ultrasound classification…' });
+  }
+  steps.push(
+    { id: 'risk',   label: 'Calculating clinical risk', icon: '📊', detail: 'Running Random Forest + SHAP analysis…' },
+    { id: 'saving', label: 'Saving report',             icon: '💾', detail: 'Writing to patient records…' },
+    { id: 'done',   label: 'Report complete',           icon: '✅', detail: 'Report saved successfully.' },
+  );
+  return steps;
+}
 
 const S = { pending: 'pending', active: 'active', done: 'done', error: 'error' };
 
 export default function ReportModal({
-  patient, ccFile, mloFile, ccImageUrl, mloImageUrl, scanLabel, onClose, onSaved,
+  patient, ccFile, mloFile, usFile,
+  ccImageUrl, mloImageUrl, usImageUrl,
+  scanLabel, onClose, onSaved,
 }) {
   const { user } = useAuth();
+  const hasUs = !!usFile;
+  const STEPS = buildSteps(hasUs);
 
-  const [stepStates, setStepStates] = useState({
-    validate: S.pending, mammo: S.pending, density: S.pending,
-    risk: S.pending, saving: S.pending, done: S.pending,
-  });
+  const initialStates = Object.fromEntries(STEPS.map(s => [s.id, S.pending]));
+  const [stepStates, setStepStates] = useState(initialStates);
   const [currentStep, setCurrentStep] = useState(0);
   const [error,  setError]  = useState('');
   const [report, setReport] = useState(null);
-  const [phase,  setPhase]  = useState('processing'); // 'processing' | 'result' | 'error'
+  const [phase,  setPhase]  = useState('processing');
 
   useEffect(() => { run(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -53,20 +63,32 @@ export default function ReportModal({
       const densityResult = await analyzeDensity(ccFile, mloFile);
       setStep('density', S.done);
 
-      // ── Step 3: Risk prediction ───────────────────────────────────────────
-      setCurrentStep(3);
+      // ── Step 3 (optional): Ultrasound analysis ────────────────────────────
+      let usResult = null;
+      let stepIdx = 3;
+      if (hasUs) {
+        setCurrentStep(stepIdx);
+        setStep('ultrasound', S.active);
+        usResult = await analyzeUltrasound(usFile);
+        setStep('ultrasound', S.done);
+        stepIdx++;
+      }
+
+      // ── Risk prediction ───────────────────────────────────────────────────
+      setCurrentStep(stepIdx);
       setStep('risk', S.active);
       const riskResult = await predictTabular(patient);
       setStep('risk', S.done);
+      stepIdx++;
 
-      // ── Step 4: Save report ───────────────────────────────────────────────
-      setCurrentStep(4);
+      // ── Save report ───────────────────────────────────────────────────────
+      setCurrentStep(stepIdx);
       setStep('saving', S.active);
       const reportId = await saveRadiologistReport({
         patientId:            patient.id,
         patientName:          patient.name,
         radiologistId:        user.uid,
-        reportType:           'combined',
+        reportType:           hasUs ? 'combined_multimodal' : 'combined',
         // mammogram finding
         mammoPrediction:      mammoResult.prediction,
         mammoPredictionIndex: mammoResult.prediction_index,
@@ -78,6 +100,11 @@ export default function ReportModal({
         densityLabel:         densityResult.density_label,
         densityIndex:         densityResult.density_index,
         densityConfidence:    densityResult.confidence,
+        // ultrasound (if present)
+        usPrediction:         usResult?.prediction ?? null,
+        usPredictionIndex:    usResult?.prediction_index ?? null,
+        usConfidence:         usResult?.confidence ?? null,
+        usProbabilities:      usResult?.probabilities ?? null,
         // risk
         riskLabel:            riskResult.risk_label,
         riskPercentage:       riskResult.risk_percentage,
@@ -85,31 +112,33 @@ export default function ReportModal({
         // images
         ccImageUrl,
         mloImageUrl,
+        ultrasoundUrl:        usImageUrl ?? null,
         gradcamImage:         densityResult.gradcam_image,
         scanLabel,
       });
       setStep('saving', S.done);
 
-      // ── Step 5: Done ──────────────────────────────────────────────────────
-      setCurrentStep(5);
+      // ── Done ──────────────────────────────────────────────────────────────
+      stepIdx++;
+      setCurrentStep(stepIdx);
       setStep('done', S.done);
       await delay(300);
 
       setReport({
-        // mammogram finding
         mammoPrediction:      mammoResult.prediction,
         mammoPredictionIndex: mammoResult.prediction_index,
         mammoConfidence:      mammoResult.confidence,
         mammoProbs:           mammoResult.probabilities,
         mammoFinding:         mammoResult.finding_category,
-        // density
         densityClass:         densityResult.density_class,
         densityLabel:         densityResult.density_label,
         densityIndex:         densityResult.density_index,
         densityConfidence:    densityResult.confidence,
         densityProbs:         densityResult.probabilities,
         gradcamImage:         densityResult.gradcam_image,
-        // risk
+        usPrediction:         usResult?.prediction ?? null,
+        usConfidence:         usResult?.confidence ?? null,
+        usProbs:              usResult?.probabilities ?? null,
         riskLabel:            riskResult.risk_label,
         riskPercentage:       riskResult.risk_percentage,
         riskPrediction:       riskResult.prediction,
@@ -136,7 +165,7 @@ export default function ReportModal({
         className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        {phase === 'processing' && <ProcessingView stepStates={stepStates} currentStep={currentStep} />}
+        {phase === 'processing' && <ProcessingView stepStates={stepStates} currentStep={currentStep} steps={STEPS} />}
         {phase === 'result'     && <ResultView report={report} patient={patient} scanLabel={scanLabel} onClose={onClose} />}
         {phase === 'error'      && <ErrorView error={error} onClose={onClose} />}
       </div>
@@ -146,8 +175,8 @@ export default function ReportModal({
 
 // ── Processing view ────────────────────────────────────────────────────────────
 
-function ProcessingView({ stepStates, currentStep }) {
-  const activeStep = STEPS[currentStep];
+function ProcessingView({ stepStates, currentStep, steps }) {
+  const activeStep = steps[currentStep];
   return (
     <div>
       <div className="relative bg-gradient-to-br from-rose-500 to-violet-600 px-6 pt-8 pb-6 overflow-hidden">
@@ -169,7 +198,7 @@ function ProcessingView({ stepStates, currentStep }) {
       </div>
 
       <div className="px-6 py-5 space-y-3">
-        {STEPS.map((step) => {
+        {steps.map((step) => {
           const state = stepStates[step.id];
           return (
             <div key={step.id} className="flex items-center gap-3">
@@ -369,6 +398,49 @@ function ResultView({ report, patient, scanLabel, onClose }) {
           </div>
         </div>
 
+        {/* ── 2b. Ultrasound Finding (if present) ──────────────────────────── */}
+        {report.usPrediction && (() => {
+          const US_CFG = {
+            Malignant: { color: 'text-red-600 dark:text-red-400',     badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400',         bar: 'bg-red-500',     icon: '🚨', bg: 'bg-red-50 dark:bg-red-900/20',     border: 'border-red-200 dark:border-red-800' },
+            Benign:    { color: 'text-amber-600 dark:text-amber-400', badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400', bar: 'bg-amber-500', icon: '⚠️', bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-800' },
+            Normal:    { color: 'text-emerald-600 dark:text-emerald-400', badge: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500', icon: '✅', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800' },
+          };
+          const uc = US_CFG[report.usPrediction] ?? US_CFG.Normal;
+          return (
+            <div className={`rounded-2xl border p-4 ${uc.bg} ${uc.border}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Ultrasound Finding</span>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${uc.badge}`}>{report.usPrediction}</span>
+              </div>
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-2xl">{uc.icon}</span>
+                <div>
+                  <p className={`text-xl font-black ${uc.color}`}>{report.usPrediction}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{report.usConfidence?.toFixed(1)}% confidence</p>
+                </div>
+              </div>
+              {report.usProbs && (
+                <div className="space-y-1.5">
+                  {Object.entries(report.usProbs).map(([cls, pct]) => {
+                    const cc = US_CFG[cls] ?? US_CFG.Normal;
+                    return (
+                      <div key={cls}>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-gray-600 dark:text-gray-400 font-medium">{cls}</span>
+                          <span className={`font-bold ${cc.color}`}>{pct.toFixed(1)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-white/60 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${cc.bar}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* ── 3. Clinical Risk Strip ───────────────────────────────────────── */}
         <div className={`rounded-2xl border p-4 ${riskColor.bg} ${riskColor.border}`}>
           <div className="flex items-center justify-between">
@@ -394,7 +466,7 @@ function ResultView({ report, patient, scanLabel, onClose }) {
         </div>
 
         {/* ── 4. Clinical alert ────────────────────────────────────────────── */}
-        {(report.mammoPrediction === 'Suspicious' || di >= 2 || isHighRisk) && (
+        {(report.mammoPrediction === 'Suspicious' || di >= 2 || isHighRisk || report.usPrediction === 'Malignant') && (
           <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3">
             <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -402,6 +474,7 @@ function ResultView({ report, patient, scanLabel, onClose }) {
             <p className="text-amber-700 dark:text-amber-400 text-xs leading-relaxed">
               {report.mammoPrediction === 'Suspicious' && 'Suspicious mammogram finding — biopsy and urgent oncology referral required. '}
               {report.mammoPrediction === 'Benign' && 'Benign finding — short-interval follow-up mammogram in 6 months. '}
+              {report.usPrediction === 'Malignant' && 'Malignant ultrasound finding — immediate biopsy required. '}
               {di >= 3 && 'Extremely dense tissue — supplemental MRI recommended. '}
               {di === 2 && 'Heterogeneous density — consider supplemental ultrasound. '}
               {isHighRisk && 'High clinical risk score — oncology referral advised.'}

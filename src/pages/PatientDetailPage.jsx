@@ -119,50 +119,74 @@ export default function PatientDetailPage() {
     setUploading(true);
     setUploadMsg('');
     try {
-      if (imageType === 'mammogram') {
-        // Upload CC and MLO separately
-        const [ccUrl, mloUrl] = await Promise.all([
+      let ccUrl = null, mloUrl = null, usUrl = null;
+
+      // ── Upload images to Supabase ──────────────────────────────────────────
+      if (imageType === 'mammogram' || imageType === 'both') {
+        [ccUrl, mloUrl] = await Promise.all([
           uploadImage(files.cc,  id, 'mammogram'),
           uploadImage(files.mlo, id, 'mammogram'),
         ]);
-        if (!ccUrl || !mloUrl) throw new Error('Upload to Supabase failed');
-
-        // Save both image records
-        await Promise.all([
-          addDoc(collection(db, 'patient_images'), {
-            patientId: id, patientName: patient.name, doctorId: user.uid,
-            imageType: 'mammogram', imageUrl: ccUrl, fileName: files.cc.name,
-            scanLabel: `${scanLabel} (CC)`, validationScore: Math.round((validationScores.cc ?? 0) * 100),
-            uploadedAt: serverTimestamp(),
-          }),
-          addDoc(collection(db, 'patient_images'), {
-            patientId: id, patientName: patient.name, doctorId: user.uid,
-            imageType: 'mammogram', imageUrl: mloUrl, fileName: files.mlo.name,
-            scanLabel: `${scanLabel} (MLO)`, validationScore: Math.round((validationScores.mlo ?? 0) * 100),
-            uploadedAt: serverTimestamp(),
-          }),
-        ]);
-
-        const imgs = await getPatientImages(id);
-        setImages(imgs);
-        setUploadMsg('success');
-        setTimeout(() => setUploadMsg(''), 5000);
-
-        // Offer to generate report
-        setReportModal({ ccFile: files.cc, mloFile: files.mlo, ccUrl, mloUrl, scanLabel });
-
-      } else {
-        // Ultrasound — single file
-        await uploadPatientImage({
-          patientId: id, patientName: patient.name, radiologistId: user.uid,
-          file: files.single, imageType: 'ultrasound',
-          scanLabel, validationScore: validationScores.single ?? 0,
-        });
-        const imgs = await getPatientImages(id);
-        setImages(imgs);
-        setUploadMsg('success');
-        setTimeout(() => setUploadMsg(''), 5000);
+        if (!ccUrl || !mloUrl) throw new Error('Mammogram upload to Supabase failed');
       }
+
+      if (imageType === 'ultrasound' || imageType === 'both') {
+        usUrl = await uploadImage(files.single, id, 'ultrasound');
+        if (!usUrl) throw new Error('Ultrasound upload to Supabase failed');
+      }
+
+      // ── Save image records to Firestore ────────────────────────────────────
+      const writes = [];
+
+      if (ccUrl) {
+        writes.push(addDoc(collection(db, 'patient_images'), {
+          patientId: id, patientName: patient.name, doctorId: user.uid,
+          imageType: 'mammogram', imageUrl: ccUrl, fileName: files.cc.name,
+          scanLabel: `${scanLabel} (CC)`,
+          validationScore: Math.round((validationScores.cc ?? 0) * 100),
+          uploadedAt: serverTimestamp(),
+        }));
+      }
+      if (mloUrl) {
+        writes.push(addDoc(collection(db, 'patient_images'), {
+          patientId: id, patientName: patient.name, doctorId: user.uid,
+          imageType: 'mammogram', imageUrl: mloUrl, fileName: files.mlo.name,
+          scanLabel: `${scanLabel} (MLO)`,
+          validationScore: Math.round((validationScores.mlo ?? 0) * 100),
+          uploadedAt: serverTimestamp(),
+        }));
+      }
+      if (usUrl) {
+        writes.push(addDoc(collection(db, 'patient_images'), {
+          patientId: id, patientName: patient.name, doctorId: user.uid,
+          imageType: 'ultrasound', imageUrl: usUrl, fileName: files.single.name,
+          scanLabel: imageType === 'both' ? `${scanLabel} (US)` : scanLabel,
+          validationScore: Math.round((validationScores.single ?? 0) * 100),
+          uploadedAt: serverTimestamp(),
+        }));
+      }
+
+      await Promise.all(writes);
+
+      const imgs = await getPatientImages(id);
+      setImages(imgs);
+      setUploadMsg('success');
+      setTimeout(() => setUploadMsg(''), 5000);
+
+      // ── Offer report generation if mammogram was uploaded ──────────────────
+      if (ccUrl && mloUrl) {
+        setReportModal({
+          ccFile:   files.cc,
+          mloFile:  files.mlo,
+          usFile:   usUrl ? files.single : null,
+          ccUrl,
+          mloUrl,
+          usUrl,
+          scanLabel,
+          hasBoth:  !!usUrl,
+        });
+      }
+
     } catch (err) {
       setUploadMsg('error:' + err.message);
     } finally {
@@ -273,7 +297,7 @@ export default function PatientDetailPage() {
       )}
 
       {/* Report generation modal — shown after mammogram upload */}
-      {reportModal && (
+      {reportModal && !reportModal.generating && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 max-w-sm w-full">
             <div className="text-center mb-5">
@@ -284,25 +308,25 @@ export default function PatientDetailPage() {
               </div>
               <h3 className="font-bold text-gray-900 dark:text-white text-lg">Generate Report?</h3>
               <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                Both CC and MLO images are uploaded. Generate an AI density + risk report now?
+                {reportModal.hasBoth
+                  ? 'CC, MLO and Ultrasound images are uploaded. Generate a combined AI report now?'
+                  : 'CC and MLO mammogram images are uploaded. Generate an AI density + risk report now?'}
               </p>
+              {reportModal.hasBoth && (
+                <div className="mt-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
+                  <span>✨</span> Multi-modal: mammogram + ultrasound
+                </div>
+              )}
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={() => setReportModal(null)}
-                className="btn-secondary flex-1 py-2.5"
-              >
-                Skip
-              </button>
+              <button onClick={() => setReportModal(null)} className="btn-secondary flex-1 py-2.5">Skip</button>
               <button
                 onClick={() => {
                   const m = reportModal;
                   setReportModal(null);
-                  // Small delay so the prompt modal closes first
                   setTimeout(() => setReportModal({ ...m, generating: true }), 100);
                 }}
-                className="btn-primary flex-1 py-2.5"
-              >
+                className="btn-primary flex-1 py-2.5">
                 Generate
               </button>
             </div>
@@ -316,8 +340,10 @@ export default function PatientDetailPage() {
           patient={patient}
           ccFile={reportModal.ccFile}
           mloFile={reportModal.mloFile}
+          usFile={reportModal.usFile}
           ccImageUrl={reportModal.ccUrl}
           mloImageUrl={reportModal.mloUrl}
+          usImageUrl={reportModal.usUrl}
           scanLabel={reportModal.scanLabel}
           onClose={async () => {
             setReportModal(null);

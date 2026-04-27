@@ -71,6 +71,26 @@ export async function analyzeMammogram(ccFile) {
   return res.json();
 }
 
+// ── Ultrasound analysis ────────────────────────────────────────────────────────
+
+/**
+ * @param {File} file — ultrasound image
+ * @returns {{ prediction, prediction_index, confidence, probabilities, gradcam_image }}
+ *   prediction: "Benign" | "Normal" | "Malignant"
+ */
+export async function analyzeUltrasound(file) {
+  const body = new FormData();
+  body.append('file', file);
+
+  const res = await fetch(`${BASE_URL}/analyze/ultrasound`, { method: 'POST', body });
+  if (!res.ok) {
+    let detail = `Server error ${res.status}`;
+    try { const j = await res.json(); detail = j.detail ?? detail; } catch { /* */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 // ── Tabular risk prediction ────────────────────────────────────────────────────
 
 /**
