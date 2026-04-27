@@ -101,6 +101,12 @@ export async function saveRadiologistReport({
   densityLabel,
   densityIndex,
   densityConfidence,
+  // mammogram finding fields
+  mammoPrediction,
+  mammoPredictionIndex,
+  mammoConfidence,
+  mammoProbabilities,
+  mammoFindingCategory,
   // risk fields
   riskLabel,
   riskPercentage,
@@ -108,7 +114,7 @@ export async function saveRadiologistReport({
   // image refs
   ccImageUrl,
   mloImageUrl,
-  gradcamImage,   // base64 — we store as flag only, not the full image
+  gradcamImage,
   // scan label
   scanLabel,
 }) {
@@ -117,19 +123,24 @@ export async function saveRadiologistReport({
     patientName,
     radiologistId,
     reportType,
-    densityClass:      densityClass      ?? null,
-    densityLabel:      densityLabel      ?? null,
-    densityIndex:      densityIndex      ?? null,
-    densityConfidence: densityConfidence ?? null,
-    riskLabel:         riskLabel         ?? null,
-    riskPercentage:    riskPercentage    ?? null,
-    riskPrediction:    riskPrediction    ?? null,
-    ccImageUrl:        ccImageUrl        ?? null,
-    mloImageUrl:       mloImageUrl       ?? null,
-    hasGradcam:        !!gradcamImage,
-    scanLabel:         scanLabel         ?? 'Report',
-    createdAt:         serverTimestamp(),
-    source:            'radiologist_web',
+    densityClass:         densityClass         ?? null,
+    densityLabel:         densityLabel         ?? null,
+    densityIndex:         densityIndex         ?? null,
+    densityConfidence:    densityConfidence    ?? null,
+    mammoPrediction:      mammoPrediction      ?? null,
+    mammoPredictionIndex: mammoPredictionIndex ?? null,
+    mammoConfidence:      mammoConfidence      ?? null,
+    mammoProbabilities:   mammoProbabilities   ?? null,
+    mammoFindingCategory: mammoFindingCategory ?? null,
+    riskLabel:            riskLabel            ?? null,
+    riskPercentage:       riskPercentage       ?? null,
+    riskPrediction:       riskPrediction       ?? null,
+    ccImageUrl:           ccImageUrl           ?? null,
+    mloImageUrl:          mloImageUrl          ?? null,
+    hasGradcam:           !!gradcamImage,
+    scanLabel:            scanLabel            ?? 'Report',
+    createdAt:            serverTimestamp(),
+    source:               'radiologist_web',
   });
   return ref.id;
 }

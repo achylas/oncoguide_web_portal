@@ -51,6 +51,26 @@ export async function analyzeDensity(ccFile, mloFile) {
   return res.json();
 }
 
+// ── Mammogram finding analysis (single CC view) ────────────────────────────────
+
+/**
+ * @param {File} ccFile — CC view mammogram
+ * @returns {{ prediction, prediction_index, confidence, probabilities, gradcam_image, finding_category }}
+ *   prediction: "Normal" | "Benign" | "Suspicious"
+ */
+export async function analyzeMammogram(ccFile) {
+  const body = new FormData();
+  body.append('file', ccFile);
+
+  const res = await fetch(`${BASE_URL}/analyze/mammogram`, { method: 'POST', body });
+  if (!res.ok) {
+    let detail = `Server error ${res.status}`;
+    try { const j = await res.json(); detail = j.detail ?? detail; } catch { /* */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 // ── Tabular risk prediction ────────────────────────────────────────────────────
 
 /**

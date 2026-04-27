@@ -755,6 +755,14 @@ function ReportCard({ report: r }) {
     : '—';
   const relTime = timeAgo(r.createdAt);
 
+  // Mammogram finding config
+  const MAMMO_CFG = {
+    Normal:     { color: 'text-emerald-600 dark:text-emerald-400', badge: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500', icon: '✅' },
+    Benign:     { color: 'text-amber-600 dark:text-amber-400',     badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400',         bar: 'bg-amber-500',   icon: '⚠️' },
+    Suspicious: { color: 'text-red-600 dark:text-red-400',         badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400',                 bar: 'bg-red-500',     icon: '🚨' },
+  };
+  const mc = MAMMO_CFG[r.mammoPrediction] ?? MAMMO_CFG.Normal;
+
   return (
     <div className="card overflow-hidden">
       {/* Header */}
@@ -764,55 +772,112 @@ function ReportCard({ report: r }) {
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{date} · {relTime}</p>
         </div>
         <span className="badge bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-400 text-xs">
-          By Radiologist
+          Radiologist
         </span>
       </div>
 
-      <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Density */}
-        {r.densityClass && (
+      <div className="p-5 space-y-4">
+
+        {/* ── Mammogram Finding — top, most prominent ── */}
+        {r.mammoPrediction && (
           <div>
-            <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Breast Density</p>
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${dc.badge}`}>
-                BI-RADS {['A','B','C','D'][di]}
-              </span>
-            </div>
-            <p className="font-bold text-gray-900 dark:text-white text-sm">{r.densityClass}</p>
-            <div className="mt-2">
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-gray-400 dark:text-gray-500">Confidence</span>
-                <span className="font-semibold text-gray-700 dark:text-gray-300">{r.densityConfidence?.toFixed(1)}%</span>
+            <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">
+              Mammogram Finding
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{mc.icon}</span>
+                <p className={`font-black text-xl ${mc.color}`}>{r.mammoPrediction}</p>
               </div>
-              <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div className={`h-full ${dc.bar} rounded-full`} style={{ width: `${r.densityConfidence ?? 0}%` }} />
+              <div className="flex items-center gap-2">
+                {r.mammoFindingCategory && (
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${mc.badge}`}>
+                    {r.mammoFindingCategory}
+                  </span>
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                  {r.mammoConfidence?.toFixed(0)}% conf
+                </span>
               </div>
             </div>
+            {/* Probability mini-bars */}
+            {r.mammoProbabilities && (
+              <div className="mt-2 space-y-1">
+                {Object.entries(r.mammoProbabilities).map(([cls, pct]) => {
+                  const cfg = MAMMO_CFG[cls] ?? MAMMO_CFG.Normal;
+                  return (
+                    <div key={cls} className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 dark:text-gray-500 w-20 flex-shrink-0">{cls}</span>
+                      <div className="flex-1 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${cfg.bar}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className={`text-xs font-bold w-10 text-right ${cfg.color}`}>{pct.toFixed(0)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Risk */}
-        {r.riskLabel && (
-          <div>
-            <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Clinical Risk</p>
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* ── Density ── */}
+          {r.densityClass && (
+            <div>
+              <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Breast Density</p>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${dc.badge}`}>
+                  BI-RADS {['A','B','C','D'][di]}
+                </span>
+              </div>
+              <p className="font-bold text-gray-900 dark:text-white text-sm">{r.densityClass}</p>
+              <div className="mt-2">
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-gray-400 dark:text-gray-500">Confidence</span>
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">{r.densityConfidence?.toFixed(1)}%</span>
+                </div>
+                <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div className={`h-full ${dc.bar} rounded-full`} style={{ width: `${r.densityConfidence ?? 0}%` }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Clinical Risk ── */}
+          {r.riskLabel && (
+            <div>
+              <p className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Clinical Risk</p>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full inline-block mb-1.5 ${
                 isHighRisk
                   ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
                   : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400'
               }`}>
                 {r.riskLabel}
               </span>
-            </div>
-            <p className={`font-black text-2xl ${isHighRisk ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-              {r.riskPercentage?.toFixed(1)}%
-            </p>
-            <div className="mt-2">
-              <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${isHighRisk ? 'bg-red-500' : 'bg-emerald-500'}`}
-                  style={{ width: `${r.riskPercentage ?? 0}%` }} />
+              <p className={`font-black text-2xl ${isHighRisk ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {r.riskPercentage?.toFixed(1)}%
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">from clinical data</p>
+              <div className="mt-2">
+                <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${isHighRisk ? 'bg-red-500' : 'bg-emerald-500'}`}
+                    style={{ width: `${r.riskPercentage ?? 0}%` }} />
+                </div>
               </div>
             </div>
+          )}
+        </div>
+
+        {/* Alert for suspicious/high-risk */}
+        {(r.mammoPrediction === 'Suspicious' || di >= 2 || isHighRisk) && (
+          <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2.5">
+            <span className="text-amber-500 text-sm flex-shrink-0 mt-0.5">⚠️</span>
+            <p className="text-amber-700 dark:text-amber-400 text-xs leading-relaxed">
+              {r.mammoPrediction === 'Suspicious' && 'Suspicious finding — biopsy required. '}
+              {di >= 3 && 'Extremely dense — MRI recommended. '}
+              {di === 2 && 'Heterogeneous density — supplemental US advised. '}
+              {isHighRisk && 'High clinical risk — oncology referral advised.'}
+            </p>
           </div>
         )}
       </div>

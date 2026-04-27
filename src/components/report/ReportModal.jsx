@@ -1,114 +1,119 @@
 import { useState, useEffect } from 'react';
-import { analyzeDensity, predictTabular } from '../../services/apiService';
+import { analyzeDensity, analyzeMammogram, predictTabular } from '../../services/apiService';
 import { saveRadiologistReport } from '../../services/patientService';
 import { useAuth } from '../../context/AuthContext';
 
 // ── Step definitions ───────────────────────────────────────────────────────────
 const STEPS = [
-  { id: 'validate',  label: 'Validating images',        icon: '🔍', detail: 'Checking CC and MLO image quality…' },
-  { id: 'density',   label: 'Analysing breast density',  icon: '🩻', detail: 'Running Siamese EfficientNetV2-S model…' },
-  { id: 'risk',      label: 'Calculating risk score',    icon: '📊', detail: 'Running Random Forest + SHAP analysis…' },
-  { id: 'saving',    label: 'Saving report',             icon: '💾', detail: 'Writing to patient records…' },
-  { id: 'done',      label: 'Report complete',           icon: '✅', detail: 'Report saved successfully.' },
+  { id: 'validate',  label: 'Validating images',           icon: '🔍', detail: 'Checking CC and MLO image quality…' },
+  { id: 'mammo',     label: 'Analysing mammogram finding', icon: '🩻', detail: 'Running EfficientNet-B0 classification…' },
+  { id: 'density',   label: 'Analysing breast density',    icon: '📐', detail: 'Running Siamese EfficientNetV2-S model…' },
+  { id: 'risk',      label: 'Calculating clinical risk',   icon: '📊', detail: 'Running Random Forest + SHAP analysis…' },
+  { id: 'saving',    label: 'Saving report',               icon: '💾', detail: 'Writing to patient records…' },
+  { id: 'done',      label: 'Report complete',             icon: '✅', detail: 'Report saved successfully.' },
 ];
 
 const S = { pending: 'pending', active: 'active', done: 'done', error: 'error' };
 
-/**
- * ReportModal
- *
- * Props:
- *   patient      — full patient object
- *   ccFile       — CC mammogram File
- *   mloFile      — MLO mammogram File
- *   ccImageUrl   — already-uploaded Supabase URL for CC
- *   mloImageUrl  — already-uploaded Supabase URL for MLO
- *   scanLabel    — label string
- *   onClose      — called when modal is dismissed
- *   onSaved      — called with reportId when saved
- */
-export default function ReportModal({ patient, ccFile, mloFile, ccImageUrl, mloImageUrl, scanLabel, onClose, onSaved }) {
+export default function ReportModal({
+  patient, ccFile, mloFile, ccImageUrl, mloImageUrl, scanLabel, onClose, onSaved,
+}) {
   const { user } = useAuth();
 
   const [stepStates, setStepStates] = useState({
-    validate: S.pending,
-    density:  S.pending,
-    risk:     S.pending,
-    saving:   S.pending,
-    done:     S.pending,
+    validate: S.pending, mammo: S.pending, density: S.pending,
+    risk: S.pending, saving: S.pending, done: S.pending,
   });
-  const [currentStep, setCurrentStep] = useState(0); // index into STEPS
-  const [error,       setError]       = useState('');
-  const [report,      setReport]      = useState(null); // final report data
-  const [phase,       setPhase]       = useState('processing'); // 'processing' | 'result' | 'error'
+  const [currentStep, setCurrentStep] = useState(0);
+  const [error,  setError]  = useState('');
+  const [report, setReport] = useState(null);
+  const [phase,  setPhase]  = useState('processing'); // 'processing' | 'result' | 'error'
 
-  // ── Run pipeline on mount ──────────────────────────────────────────────────
+  useEffect(() => { run(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const setStep = (id, state) =>
-    setStepStates(prev => ({ ...prev, [id]: state }));
+  const setStep = (id, state) => setStepStates(prev => ({ ...prev, [id]: state }));
 
   const run = async () => {
     try {
-      // ── Step 0: Validate (images already validated before upload, just show) ──
+      // ── Step 0: Validate ──────────────────────────────────────────────────
       setCurrentStep(0);
       setStep('validate', S.active);
-      await delay(800); // brief pause to show the step
+      await delay(700);
       setStep('validate', S.done);
 
-      // ── Step 1: Density analysis ──────────────────────────────────────────
+      // ── Step 1: Mammogram finding (CC only) ───────────────────────────────
       setCurrentStep(1);
+      setStep('mammo', S.active);
+      const mammoResult = await analyzeMammogram(ccFile);
+      setStep('mammo', S.done);
+
+      // ── Step 2: Density analysis (CC + MLO) ───────────────────────────────
+      setCurrentStep(2);
       setStep('density', S.active);
       const densityResult = await analyzeDensity(ccFile, mloFile);
       setStep('density', S.done);
 
-      // ── Step 2: Risk prediction ───────────────────────────────────────────
-      setCurrentStep(2);
+      // ── Step 3: Risk prediction ───────────────────────────────────────────
+      setCurrentStep(3);
       setStep('risk', S.active);
       const riskResult = await predictTabular(patient);
       setStep('risk', S.done);
 
-      // ── Step 3: Save report ───────────────────────────────────────────────
-      setCurrentStep(3);
+      // ── Step 4: Save report ───────────────────────────────────────────────
+      setCurrentStep(4);
       setStep('saving', S.active);
       const reportId = await saveRadiologistReport({
-        patientId:         patient.id,
-        patientName:       patient.name,
-        radiologistId:     user.uid,
-        reportType:        'combined',
-        densityClass:      densityResult.density_class,
-        densityLabel:      densityResult.density_label,
-        densityIndex:      densityResult.density_index,
-        densityConfidence: densityResult.confidence,
-        riskLabel:         riskResult.risk_label,
-        riskPercentage:    riskResult.risk_percentage,
-        riskPrediction:    riskResult.prediction,
+        patientId:            patient.id,
+        patientName:          patient.name,
+        radiologistId:        user.uid,
+        reportType:           'combined',
+        // mammogram finding
+        mammoPrediction:      mammoResult.prediction,
+        mammoPredictionIndex: mammoResult.prediction_index,
+        mammoConfidence:      mammoResult.confidence,
+        mammoProbabilities:   mammoResult.probabilities,
+        mammoFindingCategory: mammoResult.finding_category,
+        // density
+        densityClass:         densityResult.density_class,
+        densityLabel:         densityResult.density_label,
+        densityIndex:         densityResult.density_index,
+        densityConfidence:    densityResult.confidence,
+        // risk
+        riskLabel:            riskResult.risk_label,
+        riskPercentage:       riskResult.risk_percentage,
+        riskPrediction:       riskResult.prediction,
+        // images
         ccImageUrl,
         mloImageUrl,
-        gradcamImage:      densityResult.gradcam_image,
+        gradcamImage:         densityResult.gradcam_image,
         scanLabel,
       });
       setStep('saving', S.done);
 
-      // ── Step 4: Done ──────────────────────────────────────────────────────
-      setCurrentStep(4);
+      // ── Step 5: Done ──────────────────────────────────────────────────────
+      setCurrentStep(5);
       setStep('done', S.done);
-      await delay(400);
+      await delay(300);
 
       setReport({
-        densityClass:      densityResult.density_class,
-        densityLabel:      densityResult.density_label,
-        densityIndex:      densityResult.density_index,
-        densityConfidence: densityResult.confidence,
-        densityProbs:      densityResult.probabilities,
-        gradcamImage:      densityResult.gradcam_image,
-        riskLabel:         riskResult.risk_label,
-        riskPercentage:    riskResult.risk_percentage,
-        riskPrediction:    riskResult.prediction,
+        // mammogram finding
+        mammoPrediction:      mammoResult.prediction,
+        mammoPredictionIndex: mammoResult.prediction_index,
+        mammoConfidence:      mammoResult.confidence,
+        mammoProbs:           mammoResult.probabilities,
+        mammoFinding:         mammoResult.finding_category,
+        // density
+        densityClass:         densityResult.density_class,
+        densityLabel:         densityResult.density_label,
+        densityIndex:         densityResult.density_index,
+        densityConfidence:    densityResult.confidence,
+        densityProbs:         densityResult.probabilities,
+        gradcamImage:         densityResult.gradcam_image,
+        // risk
+        riskLabel:            riskResult.risk_label,
+        riskPercentage:       riskResult.risk_percentage,
+        riskPrediction:       riskResult.prediction,
+        shapValues:           riskResult.shap_values,
         reportId,
       });
       setPhase('result');
@@ -122,13 +127,13 @@ export default function ReportModal({ patient, ccFile, mloFile, ccImageUrl, mloI
     }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={phase !== 'processing' ? onClose : undefined}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={phase !== 'processing' ? onClose : undefined}
+    >
       <div
-        className="w-full max-w-md bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden"
+        className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {phase === 'processing' && <ProcessingView stepStates={stepStates} currentStep={currentStep} />}
@@ -143,24 +148,18 @@ export default function ReportModal({ patient, ccFile, mloFile, ccImageUrl, mloI
 
 function ProcessingView({ stepStates, currentStep }) {
   const activeStep = STEPS[currentStep];
-
   return (
     <div>
-      {/* Animated header */}
       <div className="relative bg-gradient-to-br from-rose-500 to-violet-600 px-6 pt-8 pb-6 overflow-hidden">
-        {/* Scanning animation rings */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-48 h-48 rounded-full border-2 border-white/10 animate-ping" style={{ animationDuration: '2s' }} />
           <div className="absolute w-32 h-32 rounded-full border-2 border-white/15 animate-ping" style={{ animationDuration: '1.5s', animationDelay: '0.3s' }} />
         </div>
-        {/* Corner brackets like the reference image */}
         <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-white/60 rounded-tl-sm" />
         <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-white/60 rounded-tr-sm" />
         <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-white/60 rounded-bl-sm" />
         <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-white/60 rounded-br-sm" />
-
         <div className="relative z-10 text-center">
-          {/* Pulsing icon */}
           <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
             <span className="text-3xl">{activeStep?.icon ?? '🔬'}</span>
           </div>
@@ -169,38 +168,22 @@ function ProcessingView({ stepStates, currentStep }) {
         </div>
       </div>
 
-      {/* Steps list */}
       <div className="px-6 py-5 space-y-3">
-        {STEPS.map((step, i) => {
+        {STEPS.map((step) => {
           const state = stepStates[step.id];
           return (
             <div key={step.id} className="flex items-center gap-3">
-              {/* Status icon */}
               <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
-                state === S.done  ? 'bg-emerald-500' :
+                state === S.done   ? 'bg-emerald-500' :
                 state === S.active ? 'bg-rose-500 animate-pulse' :
                 state === S.error  ? 'bg-red-500' :
                 'bg-gray-100 dark:bg-gray-800'
               }`}>
-                {state === S.done && (
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {state === S.active && (
-                  <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                )}
-                {state === S.error && (
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                )}
-                {state === S.pending && (
-                  <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
-                )}
+                {state === S.done  && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>}
+                {state === S.active && <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+                {state === S.error  && <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>}
+                {state === S.pending && <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />}
               </div>
-
-              {/* Label */}
               <span className={`text-sm font-medium transition-colors ${
                 state === S.done   ? 'text-emerald-600 dark:text-emerald-400' :
                 state === S.active ? 'text-gray-900 dark:text-white font-semibold' :
@@ -209,8 +192,6 @@ function ProcessingView({ stepStates, currentStep }) {
               }`}>
                 {step.label}
               </span>
-
-              {/* Active spinner on right */}
               {state === S.active && (
                 <div className="ml-auto">
                   <div className="w-4 h-4 border-2 border-rose-200 border-t-rose-500 rounded-full animate-spin" />
@@ -220,11 +201,8 @@ function ProcessingView({ stepStates, currentStep }) {
           );
         })}
       </div>
-
       <div className="px-6 pb-5">
-        <p className="text-center text-xs text-gray-400 dark:text-gray-600">
-          Please wait — do not close this window
-        </p>
+        <p className="text-center text-xs text-gray-400 dark:text-gray-600">Please wait — do not close this window</p>
       </div>
     </div>
   );
@@ -233,26 +211,55 @@ function ProcessingView({ stepStates, currentStep }) {
 // ── Result view ────────────────────────────────────────────────────────────────
 
 const DENSITY_COLORS = ['emerald', 'blue', 'amber', 'red'];
-const DENSITY_LABELS_SHORT = ['A — Fatty', 'B — Scattered', 'C — Heterogeneous', 'D — Extremely Dense'];
+
+const MAMMO_CONFIG = {
+  Normal:     { color: 'emerald', icon: '✅', label: 'Normal',     desc: 'No suspicious findings detected. Routine screening recommended.' },
+  Benign:     { color: 'amber',   icon: '⚠️', label: 'Benign',     desc: 'Benign finding detected. Short-interval follow-up recommended.' },
+  Suspicious: { color: 'red',     icon: '🚨', label: 'Suspicious', desc: 'Suspicious finding — biopsy and oncology referral required.' },
+};
+
+const COLOR_CLASSES = {
+  emerald: {
+    bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-200 dark:border-emerald-800',
+    text: 'text-emerald-700 dark:text-emerald-400', bar: 'bg-emerald-500',
+    badge: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400',
+  },
+  amber: {
+    bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-200 dark:border-amber-800',
+    text: 'text-amber-700 dark:text-amber-400', bar: 'bg-amber-500',
+    badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400',
+  },
+  red: {
+    bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-800',
+    text: 'text-red-700 dark:text-red-400', bar: 'bg-red-500',
+    badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400',
+  },
+  blue: {
+    bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-800',
+    text: 'text-blue-700 dark:text-blue-400', bar: 'bg-blue-500',
+    badge: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400',
+  },
+  gray: {
+    bg: 'bg-gray-50 dark:bg-gray-800', border: 'border-gray-200 dark:border-gray-700',
+    text: 'text-gray-700 dark:text-gray-300', bar: 'bg-gray-400',
+    badge: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+  },
+};
 
 function ResultView({ report, patient, scanLabel, onClose }) {
-  const di = report.densityIndex ?? 0;
-  const dc = DENSITY_COLORS[di] ?? 'gray';
-  const isHighRisk = report.riskPrediction === 1;
+  const [showProbs, setShowProbs] = useState(false);
 
-  const colorMap = {
-    emerald: { bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-400', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400' },
-    blue:    { bg: 'bg-blue-50 dark:bg-blue-900/20',    text: 'text-blue-700 dark:text-blue-400',    border: 'border-blue-200 dark:border-blue-800',    badge: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400' },
-    amber:   { bg: 'bg-amber-50 dark:bg-amber-900/20',  text: 'text-amber-700 dark:text-amber-400',  border: 'border-amber-200 dark:border-amber-800',  badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' },
-    red:     { bg: 'bg-red-50 dark:bg-red-900/20',      text: 'text-red-700 dark:text-red-400',      border: 'border-red-200 dark:border-red-800',      badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400' },
-    gray:    { bg: 'bg-gray-50 dark:bg-gray-800',       text: 'text-gray-700 dark:text-gray-300',    border: 'border-gray-200 dark:border-gray-700',    badge: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300' },
-  };
-  const c = colorMap[dc];
+  const di          = report.densityIndex ?? 0;
+  const densColor   = COLOR_CLASSES[DENSITY_COLORS[di] ?? 'gray'];
+  const mammoConf   = MAMMO_CONFIG[report.mammoPrediction] ?? MAMMO_CONFIG.Normal;
+  const mammoColor  = COLOR_CLASSES[mammoConf.color];
+  const isHighRisk  = report.riskPrediction === 1;
+  const riskColor   = isHighRisk ? COLOR_CLASSES.red : COLOR_CLASSES.emerald;
 
   return (
-    <div>
+    <div className="max-h-[90vh] overflow-y-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-rose-500 to-violet-600 px-6 py-5 flex items-center justify-between">
+      <div className="bg-gradient-to-r from-rose-500 to-violet-600 px-6 py-5 flex items-center justify-between sticky top-0 z-10">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,65 +277,131 @@ function ResultView({ report, patient, scanLabel, onClose }) {
       </div>
 
       <div className="p-5 space-y-4">
-        {/* Density result */}
-        <div className={`rounded-2xl border p-4 ${c.bg} ${c.border}`}>
+
+        {/* ── 1. Mammogram Finding — HERO ─────────────────────────────────── */}
+        <div className={`rounded-2xl border p-4 ${mammoColor.bg} ${mammoColor.border}`}>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Mammogram Finding
+            </span>
+            {report.mammoFinding && (
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${mammoColor.badge}`}>
+                {report.mammoFinding}
+              </span>
+            )}
+          </div>
+
+          {/* Big prediction */}
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-3xl">{mammoConf.icon}</span>
+            <div>
+              <p className={`text-2xl font-black ${mammoColor.text}`}>{report.mammoPrediction}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{mammoConf.desc}</p>
+            </div>
+          </div>
+
+          {/* Confidence bar */}
+          <div className="mb-3">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-gray-400 dark:text-gray-500">Confidence</span>
+              <span className={`font-bold ${mammoColor.text}`}>{report.mammoConfidence?.toFixed(1)}%</span>
+            </div>
+            <div className="h-2 bg-white/60 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full transition-all duration-700 ${mammoColor.bar}`}
+                style={{ width: `${report.mammoConfidence ?? 0}%` }} />
+            </div>
+          </div>
+
+          {/* Probability breakdown toggle */}
+          {report.mammoProbs && (
+            <div>
+              <button
+                onClick={() => setShowProbs(p => !p)}
+                className="text-xs font-semibold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex items-center gap-1 transition-colors"
+              >
+                <svg className={`w-3 h-3 transition-transform ${showProbs ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                {showProbs ? 'Hide' : 'Show'} class probabilities
+              </button>
+              {showProbs && (
+                <div className="mt-2 space-y-1.5">
+                  {Object.entries(report.mammoProbs).map(([cls, pct]) => {
+                    const cfg = MAMMO_CONFIG[cls] ?? MAMMO_CONFIG.Normal;
+                    const cc  = COLOR_CLASSES[cfg.color];
+                    return (
+                      <div key={cls}>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-gray-600 dark:text-gray-400 font-medium">{cls}</span>
+                          <span className={`font-bold ${cc.text}`}>{pct.toFixed(1)}%</span>
+                        </div>
+                        <div className="h-1.5 bg-white/60 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${cc.bar}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── 2. Breast Density ────────────────────────────────────────────── */}
+        <div className={`rounded-2xl border p-4 ${densColor.bg} ${densColor.border}`}>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Breast Density</span>
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${c.badge}`}>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${densColor.badge}`}>
               BI-RADS {['A','B','C','D'][di]}
             </span>
           </div>
-          <p className={`text-xl font-black ${c.text}`}>{report.densityClass}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{DENSITY_LABELS_SHORT[di]}</p>
-
-          {/* Confidence bar */}
+          <p className={`text-xl font-black ${densColor.text}`}>{report.densityClass}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{report.densityLabel}</p>
           <div className="mt-3">
             <div className="flex justify-between text-xs mb-1">
               <span className="text-gray-400 dark:text-gray-500">Confidence</span>
-              <span className={`font-bold ${c.text}`}>{report.densityConfidence?.toFixed(1)}%</span>
+              <span className={`font-bold ${densColor.text}`}>{report.densityConfidence?.toFixed(1)}%</span>
             </div>
             <div className="h-2 bg-white/60 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-700 ${
-                di === 0 ? 'bg-emerald-500' : di === 1 ? 'bg-blue-500' : di === 2 ? 'bg-amber-500' : 'bg-red-500'
-              }`} style={{ width: `${report.densityConfidence ?? 0}%` }} />
+              <div className={`h-full rounded-full transition-all duration-700 ${densColor.bar}`}
+                style={{ width: `${report.densityConfidence ?? 0}%` }} />
             </div>
           </div>
         </div>
 
-        {/* Risk score */}
-        <div className={`rounded-2xl border p-4 ${
-          isHighRisk
-            ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-            : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
-        }`}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Clinical Risk Score</span>
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-              isHighRisk
-                ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400'
-                : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400'
-            }`}>
+        {/* ── 3. Clinical Risk Strip ───────────────────────────────────────── */}
+        <div className={`rounded-2xl border p-4 ${riskColor.bg} ${riskColor.border}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide block mb-1">
+                Clinical Risk · RF Model
+              </span>
+              <p className={`text-2xl font-black ${riskColor.text}`}>
+                {report.riskPercentage?.toFixed(1)}%
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">from clinical data</p>
+            </div>
+            <span className={`text-sm font-bold px-3 py-1.5 rounded-full ${riskColor.badge}`}>
               {report.riskLabel}
             </span>
           </div>
-          <p className={`text-3xl font-black ${isHighRisk ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {report.riskPercentage?.toFixed(1)}%
-          </p>
           <div className="mt-3">
             <div className="h-2 bg-white/60 dark:bg-gray-700 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-700 ${isHighRisk ? 'bg-red-500' : 'bg-emerald-500'}`}
+              <div className={`h-full rounded-full transition-all duration-700 ${riskColor.bar}`}
                 style={{ width: `${report.riskPercentage ?? 0}%` }} />
             </div>
           </div>
         </div>
 
-        {/* Clinical note */}
-        {(di >= 2 || isHighRisk) && (
+        {/* ── 4. Clinical alert ────────────────────────────────────────────── */}
+        {(report.mammoPrediction === 'Suspicious' || di >= 2 || isHighRisk) && (
           <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3">
             <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <p className="text-amber-700 dark:text-amber-400 text-xs leading-relaxed">
+              {report.mammoPrediction === 'Suspicious' && 'Suspicious mammogram finding — biopsy and urgent oncology referral required. '}
+              {report.mammoPrediction === 'Benign' && 'Benign finding — short-interval follow-up mammogram in 6 months. '}
               {di >= 3 && 'Extremely dense tissue — supplemental MRI recommended. '}
               {di === 2 && 'Heterogeneous density — consider supplemental ultrasound. '}
               {isHighRisk && 'High clinical risk score — oncology referral advised.'}
@@ -340,9 +413,7 @@ function ResultView({ report, patient, scanLabel, onClose }) {
           Report saved · ID: {report.reportId?.slice(-8)}
         </p>
 
-        <button onClick={onClose} className="btn-primary w-full py-3">
-          Done
-        </button>
+        <button onClick={onClose} className="btn-primary w-full py-3">Done</button>
       </div>
     </div>
   );
@@ -368,5 +439,4 @@ function ErrorView({ error, onClose }) {
   );
 }
 
-// ── Utility ────────────────────────────────────────────────────────────────────
 const delay = ms => new Promise(r => setTimeout(r, ms));
