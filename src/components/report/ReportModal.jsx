@@ -3,13 +3,17 @@ import { analyzeDensity, analyzeMammogram, analyzeUltrasound, predictTabular } f
 import { saveRadiologistReport } from '../../services/patientService';
 import { useAuth } from '../../context/AuthContext';
 
-// ── Step definitions — ultrasound step is conditional ─────────────────────────
-function buildSteps(hasUs) {
+// ── Step definitions — conditional on available image types ──────────────────
+function buildSteps(hasMammo, hasUs) {
   const steps = [
-    { id: 'validate', label: 'Validating images',           icon: '🔍', detail: 'Checking image quality…' },
-    { id: 'mammo',    label: 'Analysing mammogram finding', icon: '🩻', detail: 'Running EfficientNet-B0 classification…' },
-    { id: 'density',  label: 'Analysing breast density',    icon: '📐', detail: 'Running Siamese EfficientNetV2-S model…' },
+    { id: 'validate', label: 'Validating images', icon: '🔍', detail: 'Checking image quality…' },
   ];
+  if (hasMammo) {
+    steps.push(
+      { id: 'mammo',   label: 'Analysing mammogram finding', icon: '🩻', detail: 'Running EfficientNet-B0 classification…' },
+      { id: 'density', label: 'Analysing breast density',    icon: '📐', detail: 'Running Siamese EfficientNetV2-S model…' },
+    );
+  }
   if (hasUs) {
     steps.push({ id: 'ultrasound', label: 'Analysing ultrasound', icon: '🔊', detail: 'Running ultrasound classification…' });
   }
@@ -29,8 +33,9 @@ export default function ReportModal({
   scanLabel, onClose, onSaved,
 }) {
   const { user } = useAuth();
-  const hasUs = !!usFile;
-  const STEPS = buildSteps(hasUs);
+  const hasMammo = !!(ccFile && mloFile);
+  const hasUs    = !!usFile;
+  const STEPS    = buildSteps(hasMammo, hasUs);
 
   const initialStates = Object.fromEntries(STEPS.map(s => [s.id, S.pending]));
   const [stepStates, setStepStates] = useState(initialStates);
@@ -51,21 +56,29 @@ export default function ReportModal({
       await delay(700);
       setStep('validate', S.done);
 
-      // ── Step 1: Mammogram finding (CC only) ───────────────────────────────
-      setCurrentStep(1);
-      setStep('mammo', S.active);
-      const mammoResult = await analyzeMammogram(ccFile);
-      setStep('mammo', S.done);
+      let stepIdx = 1;
+      let mammoResult = null;
+      let densityResult = null;
 
-      // ── Step 2: Density analysis (CC + MLO) ───────────────────────────────
-      setCurrentStep(2);
-      setStep('density', S.active);
-      const densityResult = await analyzeDensity(ccFile, mloFile);
-      setStep('density', S.done);
+      // ── Mammogram steps (only if CC + MLO uploaded) ───────────────────────
+      if (hasMammo) {
+        // Step: Mammogram finding (CC only)
+        setCurrentStep(stepIdx);
+        setStep('mammo', S.active);
+        mammoResult = await analyzeMammogram(ccFile);
+        setStep('mammo', S.done);
+        stepIdx++;
 
-      // ── Step 3 (optional): Ultrasound analysis ────────────────────────────
+        // Step: Density analysis (CC + MLO)
+        setCurrentStep(stepIdx);
+        setStep('density', S.active);
+        densityResult = await analyzeDensity(ccFile, mloFile);
+        setStep('density', S.done);
+        stepIdx++;
+      }
+
+      // ── Ultrasound analysis (if ultrasound uploaded) ──────────────────────
       let usResult = null;
-      let stepIdx = 3;
       if (hasUs) {
         setCurrentStep(stepIdx);
         setStep('ultrasound', S.active);
@@ -84,36 +97,39 @@ export default function ReportModal({
       // ── Save report ───────────────────────────────────────────────────────
       setCurrentStep(stepIdx);
       setStep('saving', S.active);
+      const reportType = hasMammo && hasUs ? 'combined_multimodal'
+                       : hasMammo          ? 'combined'
+                       :                    'ultrasound_only';
       const reportId = await saveRadiologistReport({
         patientId:            patient.id,
         patientName:          patient.name,
         radiologistId:        user.uid,
-        reportType:           hasUs ? 'combined_multimodal' : 'combined',
-        // mammogram finding
-        mammoPrediction:      mammoResult.prediction,
-        mammoPredictionIndex: mammoResult.prediction_index,
-        mammoConfidence:      mammoResult.confidence,
-        mammoProbabilities:   mammoResult.probabilities,
-        mammoFindingCategory: mammoResult.finding_category,
-        // density
-        densityClass:         densityResult.density_class,
-        densityLabel:         densityResult.density_label,
-        densityIndex:         densityResult.density_index,
-        densityConfidence:    densityResult.confidence,
+        reportType,
+        // mammogram finding (null if ultrasound-only)
+        mammoPrediction:      mammoResult?.prediction      ?? null,
+        mammoPredictionIndex: mammoResult?.prediction_index ?? null,
+        mammoConfidence:      mammoResult?.confidence      ?? null,
+        mammoProbabilities:   mammoResult?.probabilities   ?? null,
+        mammoFindingCategory: mammoResult?.finding_category ?? null,
+        // density (null if ultrasound-only)
+        densityClass:         densityResult?.density_class  ?? null,
+        densityLabel:         densityResult?.density_label  ?? null,
+        densityIndex:         densityResult?.density_index  ?? null,
+        densityConfidence:    densityResult?.confidence     ?? null,
         // ultrasound (if present)
-        usPrediction:         usResult?.prediction ?? null,
-        usPredictionIndex:    usResult?.prediction_index ?? null,
-        usConfidence:         usResult?.confidence ?? null,
-        usProbabilities:      usResult?.probabilities ?? null,
+        usPrediction:         usResult?.prediction          ?? null,
+        usPredictionIndex:    usResult?.prediction_index    ?? null,
+        usConfidence:         usResult?.confidence          ?? null,
+        usProbabilities:      usResult?.probabilities       ?? null,
         // risk
         riskLabel:            riskResult.risk_label,
         riskPercentage:       riskResult.risk_percentage,
         riskPrediction:       riskResult.prediction,
         // images
-        ccImageUrl,
-        mloImageUrl,
-        ultrasoundUrl:        usImageUrl ?? null,
-        gradcamImage:         densityResult.gradcam_image,
+        ccImageUrl:           ccImageUrl  ?? null,
+        mloImageUrl:          mloImageUrl ?? null,
+        ultrasoundUrl:        usImageUrl  ?? null,
+        gradcamImage:         densityResult?.gradcam_image ?? null,
         scanLabel,
       });
       setStep('saving', S.done);
@@ -125,20 +141,20 @@ export default function ReportModal({
       await delay(300);
 
       setReport({
-        mammoPrediction:      mammoResult.prediction,
-        mammoPredictionIndex: mammoResult.prediction_index,
-        mammoConfidence:      mammoResult.confidence,
-        mammoProbs:           mammoResult.probabilities,
-        mammoFinding:         mammoResult.finding_category,
-        densityClass:         densityResult.density_class,
-        densityLabel:         densityResult.density_label,
-        densityIndex:         densityResult.density_index,
-        densityConfidence:    densityResult.confidence,
-        densityProbs:         densityResult.probabilities,
-        gradcamImage:         densityResult.gradcam_image,
-        usPrediction:         usResult?.prediction ?? null,
-        usConfidence:         usResult?.confidence ?? null,
-        usProbs:              usResult?.probabilities ?? null,
+        mammoPrediction:      mammoResult?.prediction       ?? null,
+        mammoPredictionIndex: mammoResult?.prediction_index ?? null,
+        mammoConfidence:      mammoResult?.confidence       ?? null,
+        mammoProbs:           mammoResult?.probabilities    ?? null,
+        mammoFinding:         mammoResult?.finding_category ?? null,
+        densityClass:         densityResult?.density_class  ?? null,
+        densityLabel:         densityResult?.density_label  ?? null,
+        densityIndex:         densityResult?.density_index  ?? null,
+        densityConfidence:    densityResult?.confidence     ?? null,
+        densityProbs:         densityResult?.probabilities  ?? null,
+        gradcamImage:         densityResult?.gradcam_image  ?? null,
+        usPrediction:         usResult?.prediction          ?? null,
+        usConfidence:         usResult?.confidence          ?? null,
+        usProbs:              usResult?.probabilities       ?? null,
         riskLabel:            riskResult.risk_label,
         riskPercentage:       riskResult.risk_percentage,
         riskPrediction:       riskResult.prediction,

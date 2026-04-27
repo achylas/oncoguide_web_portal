@@ -173,8 +173,9 @@ export default function PatientDetailPage() {
       setUploadMsg('success');
       setTimeout(() => setUploadMsg(''), 5000);
 
-      // ── Offer report generation if mammogram was uploaded ──────────────────
+      // ── Offer report generation after upload ──────────────────────────────
       if (ccUrl && mloUrl) {
+        // Mammogram (CC + MLO) uploaded — offer full mammogram report
         setReportModal({
           ccFile:   files.cc,
           mloFile:  files.mlo,
@@ -184,6 +185,19 @@ export default function PatientDetailPage() {
           usUrl,
           scanLabel,
           hasBoth:  !!usUrl,
+        });
+      } else if (usUrl && !ccUrl && !mloUrl) {
+        // Ultrasound-only upload — offer ultrasound report
+        setReportModal({
+          ccFile:   null,
+          mloFile:  null,
+          usFile:   files.single,
+          ccUrl:    null,
+          mloUrl:   null,
+          usUrl,
+          scanLabel,
+          hasBoth:  false,
+          usOnly:   true,
         });
       }
 
@@ -296,7 +310,7 @@ export default function PatientDetailPage() {
         <Lightbox img={lightbox} onClose={() => setLightbox(null)} />
       )}
 
-      {/* Report generation modal — shown after mammogram upload */}
+      {/* Report generation modal — shown after image upload */}
       {reportModal && !reportModal.generating && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 max-w-sm w-full">
@@ -308,13 +322,20 @@ export default function PatientDetailPage() {
               </div>
               <h3 className="font-bold text-gray-900 dark:text-white text-lg">Generate Report?</h3>
               <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-                {reportModal.hasBoth
-                  ? 'CC, MLO and Ultrasound images are uploaded. Generate a combined AI report now?'
-                  : 'CC and MLO mammogram images are uploaded. Generate an AI density + risk report now?'}
+                {reportModal.usOnly
+                  ? 'Ultrasound image uploaded. Generate an AI ultrasound analysis + risk report now?'
+                  : reportModal.hasBoth
+                    ? 'CC, MLO and Ultrasound images are uploaded. Generate a combined AI report now?'
+                    : 'CC and MLO mammogram images are uploaded. Generate an AI density + risk report now?'}
               </p>
               {reportModal.hasBoth && (
                 <div className="mt-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
                   <span>✨</span> Multi-modal: mammogram + ultrasound
+                </div>
+              )}
+              {reportModal.usOnly && (
+                <div className="mt-2 flex items-center justify-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400">
+                  <span>🔊</span> Ultrasound classification + clinical risk
                 </div>
               )}
             </div>
