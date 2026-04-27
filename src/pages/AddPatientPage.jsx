@@ -21,11 +21,11 @@ function validateStep(step, form) {
     else if (!ok(form.age, 10, 100))
       errs.age = 'Age must be between 10 and 100.';
 
-    // Weight: cannot be 0 or empty, minimum 1 kg
+    // Weight: cannot be 0 or empty, minimum 20 kg
     if (form.weight === '')
       errs.weight = 'Weight is required.';
-    else if (!ok(form.weight, 1, 300))
-      errs.weight = 'Weight must be between 1 and 300 kg.';
+    else if (!ok(form.weight, 20, 300))
+      errs.weight = 'Weight must be between 20 and 300 kg.';
 
     // BMI: cannot be 0, realistic range 10–60
     if (form.imc === '')
@@ -435,9 +435,9 @@ function Step1({ form, set, errs }) {
         {/* Age: min 10, integer */}
         <NumField label="Age (years)" hint="10–100" value={form.age} onChange={v => set('age', v)}
           min={10} max={100} step={1} required err={errs.age} />
-        {/* Weight: min 1 kg, cannot be 0 */}
-        <NumField label="Weight (kg)" hint="1–300 kg" value={form.weight} onChange={v => set('weight', v)}
-          min={1} max={300} step={0.1} required err={errs.weight} />
+        {/* Weight: min 20 kg */}
+        <NumField label="Weight (kg)" hint="20–300 kg" value={form.weight} onChange={v => set('weight', v)}
+          min={20} max={300} step={0.1} required err={errs.weight} />
       </div>
 
       {/* BMI: min 10, realistic range */}
