@@ -9,31 +9,67 @@ function validateStep(step, form) {
   const n = (v) => v === '' ? NaN : Number(v);
   const ok = (v, min, max) => !isNaN(n(v)) && n(v) >= min && n(v) <= max;
 
+  const patientAge = n(form.age);
+
   if (step === 0) {
-    if (!form.name.trim())                          errs.name     = 'Full name is required.';
-    if (form.age    !== '' && !ok(form.age,    0, 130)) errs.age    = 'Age must be 0–130.';
-    if (form.weight !== '' && !ok(form.weight, 0, 300)) errs.weight = 'Weight must be 0–300 kg.';
-    if (form.imc    !== '' && !ok(form.imc,    0, 100)) errs.imc    = 'BMI must be 0–100.';
-    if (!form.isMarried)                            errs.isMarried = 'Please select marital status.';
+    if (!form.name.trim())
+      errs.name = 'Full name is required.';
+
+    // Age: minimum 10
+    if (form.age === '')
+      errs.age = 'Age is required.';
+    else if (!ok(form.age, 10, 100))
+      errs.age = 'Age must be between 10 and 100.';
+
+    // Weight: cannot be 0 or empty, minimum 1 kg
+    if (form.weight === '')
+      errs.weight = 'Weight is required.';
+    else if (!ok(form.weight, 1, 300))
+      errs.weight = 'Weight must be between 1 and 300 kg.';
+
+    // BMI: cannot be 0, realistic range 10–60
+    if (form.imc === '')
+      errs.imc = 'BMI is required.';
+    else if (!ok(form.imc, 10, 60))
+      errs.imc = 'BMI must be between 10 and 60.';
+
+    if (!form.isMarried)
+      errs.isMarried = 'Please select marital status.';
   }
 
   if (step === 1) {
-    if (form.menarcheAge !== '' && !ok(form.menarcheAge, 0, 30))
-      errs.menarcheAge = 'Menarche age must be 0–30.';
+    // Menarche: realistic minimum age 6
+    if (form.menarcheAge !== '' && !ok(form.menarcheAge, 6, 30))
+      errs.menarcheAge = 'Menarche age must be between 6 and 30.';
+
     if (!form.menopauseStatus)
       errs.menopauseStatus = 'Please indicate menopause status.';
+
     if (form.menopauseStatus === 'yes') {
-      if (!form.menopauseAge)
+      if (!form.menopauseAge) {
         errs.menopauseAge = 'Menopause age is required when menopause = Yes.';
-      else if (!ok(form.menopauseAge, 0, 130))
-        errs.menopauseAge = 'Menopause age must be 0–130.';
+      } else if (!ok(form.menopauseAge, 20, 100)) {
+        errs.menopauseAge = 'Menopause age must be between 20 and 100.';
+      } else if (form.menarcheAge !== '' && n(form.menopauseAge) <= n(form.menarcheAge)) {
+        errs.menopauseAge = 'Menopause age must be greater than menarche age.';
+      } else if (!isNaN(patientAge) && n(form.menopauseAge) > patientAge) {
+        errs.menopauseAge = `Menopause age cannot exceed the patient's current age (${patientAge}).`;
+      }
     }
+
     if (form.isMarried === 'yes') {
       if (!form.pregnancy)
         errs.pregnancy = 'Please indicate pregnancy history.';
+
       if (form.pregnancy === 'yes') {
-        if (form.firstChildAge !== '' && !ok(form.firstChildAge, 0, 130))
-          errs.firstChildAge = 'Age at first child must be 0–130.';
+        if (form.firstChildAge === '') {
+          errs.firstChildAge = 'Age at first child is required.';
+        } else if (!ok(form.firstChildAge, 10, 100)) {
+          errs.firstChildAge = 'Age at first child must be between 10 and 100.';
+        } else if (!isNaN(patientAge) && n(form.firstChildAge) >= patientAge) {
+          errs.firstChildAge = `Age at first child must be less than the patient's current age (${patientAge}).`;
+        }
+
         if (form.numberOfChildren !== '' && !ok(form.numberOfChildren, 0, 20))
           errs.numberOfChildren = 'Children must be 0–20.';
       }
@@ -284,12 +320,21 @@ function NumField({ label, hint, value, onChange, min, max, step = 1, required =
           type="number" min={min} max={max} step={step}
           value={value}
           onChange={e => {
+            // Allow free typing — never block mid-input.
+            // Only reject clearly impossible values (negative when min≥0, or way over max).
             const v = e.target.value;
-            if (v === '') { onChange(''); return; }
+            if (v === '' || v === '-') { onChange(v); return; }
             const num = Number(v);
-            if (max !== undefined && num > max) return;
-            if (min !== undefined && num < min) return;
+            if (max !== undefined && num > max) return; // hard cap at max
             onChange(v);
+          }}
+          onBlur={e => {
+            // Clamp to valid range when the user leaves the field.
+            const v = e.target.value;
+            if (v === '' || v === '-') return;
+            const num = Number(v);
+            if (min !== undefined && num < min) { onChange(String(min)); return; }
+            if (max !== undefined && num > max) { onChange(String(max)); return; }
           }}
           placeholder={hint}
           className={`input ${suffix ? 'pr-16' : ''} ${err ? 'border-red-400 dark:border-red-500 focus:ring-red-400' : ''}`}
@@ -387,17 +432,17 @@ function Step1({ form, set, errs }) {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {/* Age: 0–130, integer */}
-        <NumField label="Age (years)" hint="0–130" value={form.age} onChange={v => set('age', v)}
-          min={0} max={130} step={1} err={errs.age} />
-        {/* Weight: 0–300, float */}
-        <NumField label="Weight (kg)" hint="0–300 kg" value={form.weight} onChange={v => set('weight', v)}
-          min={0} max={300} step={0.1} err={errs.weight} />
+        {/* Age: min 10, integer */}
+        <NumField label="Age (years)" hint="10–100" value={form.age} onChange={v => set('age', v)}
+          min={10} max={100} step={1} required err={errs.age} />
+        {/* Weight: min 1 kg, cannot be 0 */}
+        <NumField label="Weight (kg)" hint="1–300 kg" value={form.weight} onChange={v => set('weight', v)}
+          min={1} max={300} step={0.1} required err={errs.weight} />
       </div>
 
-      {/* BMI: 0–100, float */}
-      <NumField label="BMI (IMC)" hint="0–100" value={form.imc} onChange={v => set('imc', v)}
-        min={0} max={100} step={0.1} err={errs.imc} />
+      {/* BMI: min 10, realistic range */}
+      <NumField label="BMI (IMC)" hint="10–60" value={form.imc} onChange={v => set('imc', v)}
+        min={10} max={60} step={0.1} required err={errs.imc} />
 
       {/* Marital status */}
       <div>
@@ -444,20 +489,28 @@ function Step2({ form, set, errs }) {
   return (
     <div className="space-y-4">
       <Section title="Menstrual History">
-        {/* Menarche: 0–30, integer */}
-        <NumField label="Menarche Age" hint="Age at first period (0–30)" value={form.menarcheAge}
-          onChange={v => set('menarcheAge', v)} min={0} max={30} step={1} err={errs.menarcheAge} />
+        {/* Menarche: realistic min 6 */}
+        <NumField label="Menarche Age" hint="Age at first period (6–30)" value={form.menarcheAge}
+          onChange={v => set('menarcheAge', v)} min={6} max={30} step={1} err={errs.menarcheAge} />
 
         {/* Menopause status: binary */}
         <YesNo label="Has menopause occurred?" value={form.menopauseStatus}
           onChange={v => { set('menopauseStatus', v); if (v === 'no') set('menopauseAge', ''); }}
           err={errs.menopauseStatus} required />
 
-        {/* Menopause age: only if menopause = yes, 0–130 */}
+        {/* Menopause age: only if menopause = yes, must be > menarche and ≤ patient age */}
         {form.menopauseStatus === 'yes' && (
-          <NumField label="Menopause Age" hint="Age at menopause (0–130)" value={form.menopauseAge}
-            onChange={v => set('menopauseAge', v)} min={0} max={130} step={1}
-            err={errs.menopauseAge} required />
+          <NumField
+            label="Menopause Age"
+            hint={`20–${form.age ? form.age : '100'} (must not exceed patient's age)`}
+            value={form.menopauseAge}
+            onChange={v => set('menopauseAge', v)}
+            min={20}
+            max={form.age ? Number(form.age) : 100}
+            step={1}
+            err={errs.menopauseAge}
+            required
+          />
         )}
         {form.menopauseStatus === 'no' && (
           <div className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5">
@@ -485,10 +538,17 @@ function Step2({ form, set, errs }) {
             {form.pregnancy === 'yes' && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-                  {/* Age at first child: 0–130, integer */}
-                  <NumField label="Age at First Child" hint="0–130" value={form.firstChildAge}
-                    onChange={v => set('firstChildAge', v)} min={0} max={130} step={1}
-                    err={errs.firstChildAge} />
+                  {/* Age at first child: must be < patient's current age */}
+                  <NumField
+                    label="Age at First Child"
+                    hint={form.age ? `10–${Number(form.age) - 1}` : '10–99'}
+                    value={form.firstChildAge}
+                    onChange={v => set('firstChildAge', v)}
+                    min={10}
+                    max={form.age ? Number(form.age) - 1 : 99}
+                    step={1}
+                    err={errs.firstChildAge}
+                  />
                   {/* Children: dropdown 0–5+ */}
                   <Select label="Number of Children" hint="Select…" value={form.numberOfChildren}
                     onChange={v => set('numberOfChildren', v)} options={CHILDREN_OPTIONS}
