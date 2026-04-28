@@ -1,6 +1,6 @@
 import {
   collection, addDoc, getDocs, doc, getDoc,
-  query, orderBy, serverTimestamp, updateDoc,
+  query, orderBy, serverTimestamp, updateDoc, deleteDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { uploadImage } from './supabase';
@@ -36,6 +36,32 @@ export async function updatePatient(id, data) {
     ...data,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Delete a patient and ALL associated data:
+ * - patient document
+ * - all patient_images documents
+ * - all radiologist_reports documents
+ * Firestore batches are capped at 500 ops; we chunk if needed.
+ */
+export async function deletePatient(patientId) {
+  // Collect all docs to delete
+  const [imagesSnap, reportsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'patient_images'))),
+    getDocs(query(collection(db, 'radiologist_reports'))),
+  ]);
+
+  const imageIds  = imagesSnap.docs.filter(d => d.data().patientId === patientId).map(d => d.ref);
+  const reportIds = reportsSnap.docs.filter(d => d.data().patientId === patientId).map(d => d.ref);
+  const allRefs   = [...imageIds, ...reportIds, doc(db, PATIENTS, patientId)];
+
+  // Delete in chunks of 500 (Firestore batch limit)
+  for (let i = 0; i < allRefs.length; i += 500) {
+    const batch = writeBatch(db);
+    allRefs.slice(i, i + 500).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
 }
 
 // ── Patient Images ────────────────────────────────────────────────────────────
@@ -123,6 +149,8 @@ export async function saveRadiologistReport({
   gradcamImage,
   // scan label
   scanLabel,
+  // radiologist comment (present when AI confidence < 60 %)
+  radiologistComment,
 }) {
   const ref = await addDoc(collection(db, REPORTS), {
     patientId,
@@ -155,6 +183,7 @@ export async function saveRadiologistReport({
     ultrasoundUrl:        ultrasoundUrl        ?? null,
     hasGradcam:           !!gradcamImage,
     scanLabel:            scanLabel            ?? 'Report',
+    radiologistComment:   radiologistComment   ?? null,
     createdAt:            serverTimestamp(),
     source:               'radiologist_web',
   });

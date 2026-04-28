@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { getPatient, getPatientImages, getPatientReports, uploadPatientImage } from '../services/patientService';
+import { getPatient, getPatientImages, getPatientReports, deletePatient } from '../services/patientService';
 import { uploadImage } from '../services/supabase';
 import { useAuth } from '../context/AuthContext';
 import PageLayout from '../components/layout/PageLayout';
 import ImageUploader from '../components/images/ImageUploader';
 import ReportModal from '../components/report/ReportModal';
+import ConsentModal from '../components/consent/ConsentModal';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -87,12 +88,18 @@ export default function PatientDetailPage() {
   const [images,    setImages]    = useState([]);
   const [reports,   setReports]   = useState([]);
   const [tab,       setTab]       = useState(0);
-  const [loading,   setLoading]   = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [uploadMsg, setUploadMsg] = useState('');  // 'success' | 'error:...' | ''
-  const [lightbox,  setLightbox]  = useState(null); // full image object
+  const [loading,        setLoading]        = useState(true);
+  const [uploading,      setUploading]      = useState(false);
+  const [uploadMsg,      setUploadMsg]      = useState('');  // 'success' | 'error:...' | ''
+  const [lightbox,       setLightbox]       = useState(null); // full image object
   // Report modal state
-  const [reportModal, setReportModal] = useState(null); // { ccFile, mloFile, ccUrl, mloUrl, scanLabel }
+  const [reportModal,    setReportModal]    = useState(null); // { ccFile, mloFile, ccUrl, mloUrl, scanLabel }
+  // Consent modal state — holds { files, imageType, scanLabel, validationScores } while waiting for consent
+  const [consentPending, setConsentPending] = useState(null);
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting,          setDeleting]          = useState(false);
+  const [deleteError,       setDeleteError]        = useState('');
 
   useEffect(() => {
     async function load() {
@@ -115,7 +122,27 @@ export default function PatientDetailPage() {
     load();
   }, [id, navigate]);
 
-  const handleUpload = async (files, imageType, scanLabel, validationScores) => {
+  // ── Step 1: ImageUploader calls this → show consent modal ─────────────────
+  const handleUpload = (files, imageType, scanLabel, validationScores) => {
+    setConsentPending({ files, imageType, scanLabel, validationScores });
+  };
+
+  // ── Delete patient + all associated data ──────────────────────────────────
+  const handleDelete = async () => {
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await deletePatient(id);
+      navigate('/patients');
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete patient. Please try again.');
+      setDeleting(false);
+    }
+  };
+
+  // ── Step 2: called when clinician confirms consent ────────────────────────
+  const proceedAfterConsent = async ({ files, imageType, scanLabel, validationScores }) => {
+    setConsentPending(null);
     setUploading(true);
     setUploadMsg('');
     try {
@@ -256,6 +283,17 @@ export default function PatientDetailPage() {
               <StatPill label="Ultrasounds" value={ultrasounds.length} accent />
             </div>
           </div>
+          {/* Delete button */}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-red-200 dark:border-red-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-xs font-semibold transition-all"
+            title="Delete patient"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete
+          </button>
         </div>
       </div>
 
@@ -308,6 +346,84 @@ export default function PatientDetailPage() {
       {/* Lightbox */}
       {lightbox && (
         <Lightbox img={lightbox} onClose={() => setLightbox(null)} />
+      )}
+
+      {/* Consent modal — shown before upload is processed */}
+      {consentPending && (
+        <ConsentModal
+          patientName={patient?.name}
+          scanLabel={consentPending.scanLabel}
+          imageType={consentPending.imageType}
+          onConfirm={() => proceedAfterConsent(consentPending)}
+          onCancel={() => setConsentPending(null)}
+        />
+      )}
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="h-1 bg-red-500" />
+            <div className="p-6">
+              {/* Icon + title */}
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-11 h-11 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-base">Delete Patient?</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                    This will permanently delete <span className="font-semibold text-gray-700 dark:text-gray-300">{patient.name}</span> and all associated data — images, reports, and clinical records. This cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              {/* What gets deleted */}
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/40 rounded-xl px-4 py-3 mb-4 space-y-1.5">
+                {[
+                  `${images.length} image${images.length !== 1 ? 's' : ''}`,
+                  `${reports.length} report${reports.length !== 1 ? 's' : ''}`,
+                  'All clinical data',
+                ].map(item => (
+                  <div key={item} className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
+                    <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    {item}
+                  </div>
+                ))}
+              </div>
+
+              {deleteError && (
+                <p className="text-xs text-red-500 mb-3 flex items-center gap-1">
+                  <span>⚠</span> {deleteError}
+                </p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowDeleteConfirm(false); setDeleteError(''); }}
+                  disabled={deleting}
+                  className="btn-secondary flex-1 py-2.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-red-500 hover:bg-red-600 text-white transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {deleting
+                    ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Deleting…</>
+                    : <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Yes, Delete</>
+                  }
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Report generation modal — shown after image upload */}

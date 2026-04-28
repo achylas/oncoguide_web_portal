@@ -92,6 +92,15 @@ function validateStep(step, form) {
     }
   }
 
+  if (step === 4) {
+    if (!form.consentDataProcessing)
+      errs.consentDataProcessing = 'You must acknowledge consent to data processing.';
+    if (!form.consentAiAnalysis)
+      errs.consentAiAnalysis = 'You must acknowledge consent to AI analysis.';
+    if (!form.consentDataStorage)
+      errs.consentDataStorage = 'You must acknowledge consent to data storage.';
+  }
+
   return errs;
 }
 
@@ -100,6 +109,7 @@ const STEPS = [
   { label: 'Reproductive Health', desc: 'Risk assessment factors',  icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg> },
   { label: 'Lifestyle & Family',  desc: 'Exercise, family history', icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg> },
   { label: 'Medical Info',        desc: 'History & medications',    icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> },
+  { label: 'Consent',             desc: 'Data & privacy consent',   icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> },
 ];
 
 const initialForm = {
@@ -113,6 +123,10 @@ const initialForm = {
   exerciseRegular: '',   // '0' | '1' — direct binary input
   familyHistory: '', familyHistoryCount: '', familyRelations: [],  // array of relation strings
   allergies: '', history: '', medications: '', comments: '',
+  // Consent (step 4)
+  consentDataProcessing: false,
+  consentAiAnalysis: false,
+  consentDataStorage: false,
 };
 
 export default function AddPatientPage() {
@@ -267,6 +281,7 @@ export default function AddPatientPage() {
               {step === 1 && <Step2 form={form} set={set} errs={fieldErrs} />}
               {step === 2 && <Step3 form={form} set={set} errs={fieldErrs} />}
               {step === 3 && <Step4 form={form} set={set} />}
+              {step === 4 && <Step5 form={form} set={set} errs={fieldErrs} />}
 
               {saveError && (
                 <div className="mt-5 flex items-start gap-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm rounded-xl px-4 py-3">
@@ -750,6 +765,132 @@ function Step4({ form, set }) {
       <TextArea label="Current Medications" hint="List all current medications and dosages"  value={form.medications} onChange={v => set('medications', v)} />
       <TextArea label="Additional Notes"    hint="Any other relevant information"            value={form.comments}    onChange={v => set('comments', v)} />
       <InfoBox color="emerald">Review all information before saving the patient record.</InfoBox>
+    </div>
+  );
+}
+
+// ── Step 5 — Consent ──────────────────────────────────────────────────────────
+
+const CONSENT_ITEMS = [
+  {
+    key: 'consentDataProcessing',
+    icon: '📋',
+    title: 'Consent to Data Processing',
+    desc: 'The patient (or their legal guardian) has been informed that their personal and medical data will be collected and processed for the purpose of clinical assessment and breast cancer risk evaluation.',
+  },
+  {
+    key: 'consentAiAnalysis',
+    icon: '🤖',
+    title: 'Consent to AI-Assisted Analysis',
+    desc: 'The patient has been informed that an AI system will be used to assist in analysing their medical data and imaging. They understand that AI results are advisory and will be reviewed by a qualified clinician before any clinical decision is made.',
+  },
+  {
+    key: 'consentDataStorage',
+    icon: '🔒',
+    title: 'Consent to Data Storage & Privacy',
+    desc: 'The patient has consented to the secure storage of their medical records in accordance with applicable data-protection regulations (GDPR / HIPAA). They have been informed of their right to access, correct, or request deletion of their data at any time.',
+  },
+];
+
+function Step5({ form, set, errs }) {
+  const checkedCount = CONSENT_ITEMS.filter(({ key }) => form[key]).length;
+  const allChecked   = checkedCount === CONSENT_ITEMS.length;
+
+  return (
+    <div className="space-y-5">
+      {/* Header notice */}
+      <div className="flex items-start gap-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-900/40 rounded-xl px-4 py-3.5">
+        <svg className="w-5 h-5 text-violet-600 dark:text-violet-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+        <p className="text-sm text-violet-700 dark:text-violet-300">
+          Before saving this patient record, please confirm that the patient (or their legal guardian) has given informed consent for each of the following items.
+        </p>
+      </div>
+
+      {/* Consent items */}
+      <div className="space-y-3">
+        {CONSENT_ITEMS.map(({ key, icon, title, desc }) => {
+          const checked = !!form[key];
+          const hasErr  = !!errs[key];
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => set(key, !checked)}
+              aria-pressed={checked}
+              className={`w-full flex items-start gap-3.5 p-4 rounded-xl border-2 text-left transition-all ${
+                checked
+                  ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
+                  : hasErr
+                    ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10'
+                    : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}
+            >
+              {/* Checkbox */}
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${
+                checked
+                  ? 'border-emerald-500 bg-emerald-500'
+                  : hasErr
+                    ? 'border-red-400 bg-white dark:bg-gray-800'
+                    : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'
+              }`}>
+                {checked && (
+                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold leading-tight ${
+                  checked ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-800 dark:text-gray-200'
+                }`}>
+                  <span className="mr-1.5">{icon}</span>{title}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">{desc}</p>
+                {hasErr && !checked && (
+                  <p className="text-xs text-red-500 dark:text-red-400 mt-1.5 flex items-center gap-1">
+                    <span>⚠</span>{errs[key]}
+                  </p>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Progress bar */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-300 ${
+              allChecked
+                ? 'bg-gradient-to-r from-emerald-400 to-emerald-500'
+                : 'bg-gradient-to-r from-rose-500 to-violet-600'
+            }`}
+            style={{ width: `${(checkedCount / CONSENT_ITEMS.length) * 100}%` }}
+          />
+        </div>
+        <span className="text-xs font-semibold text-gray-400 dark:text-gray-500 tabular-nums">
+          {checkedCount}/{CONSENT_ITEMS.length}
+        </span>
+      </div>
+
+      {allChecked ? (
+        <div className="flex items-center gap-2.5 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400 font-medium">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          All consent items acknowledged. You can now save the patient record.
+        </div>
+      ) : (
+        <InfoBox color="amber">
+          All three consent items must be acknowledged before the patient record can be saved.
+        </InfoBox>
+      )}
     </div>
   );
 }

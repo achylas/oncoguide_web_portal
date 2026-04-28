@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../services/firebase';
 import { analyzeDensity, analyzeMammogram, analyzeUltrasound, predictTabular } from '../../services/apiService';
 import { saveRadiologistReport } from '../../services/patientService';
 import { useAuth } from '../../context/AuthContext';
@@ -69,14 +71,12 @@ export default function ReportModal({
 
       // ── Mammogram steps (only if CC + MLO uploaded) ───────────────────────
       if (hasMammo) {
-        // Step: Mammogram finding (CC only)
         setCurrentStep(stepIdx);
         setStep('mammo', S.active);
         mammoResult = await analyzeMammogram(ccFile);
         setStep('mammo', S.done);
         stepIdx++;
 
-        // Step: Density analysis (CC + MLO)
         setCurrentStep(stepIdx);
         setStep('density', S.active);
         densityResult = await analyzeDensity(ccFile, mloFile);
@@ -84,7 +84,7 @@ export default function ReportModal({
         stepIdx++;
       }
 
-      // ── Ultrasound analysis (if ultrasound uploaded) ──────────────────────
+      // ── Ultrasound analysis ───────────────────────────────────────────────
       let usResult = null;
       if (hasUs) {
         setCurrentStep(stepIdx);
@@ -107,43 +107,49 @@ export default function ReportModal({
       const reportType = hasMammo && hasUs ? 'combined_multimodal'
                        : hasMammo          ? 'combined'
                        :                    'ultrasound_only';
+
+      // Determine if a radiologist comment will be required (highest conf < 60%)
+      const confidences = [
+        mammoResult?.confidence,
+        densityResult?.confidence,
+        usResult?.confidence,
+      ].filter(v => v != null);
+      const highestConf = confidences.length > 0 ? Math.max(...confidences) : 100;
+      const needsComment = highestConf < 60;
+
       const reportId = await saveRadiologistReport({
         patientId:            patient.id,
         patientName:          patient.name,
         radiologistId:        user.uid,
         reportType,
-        // mammogram finding (null if ultrasound-only)
         mammoPrediction:      mammoResult?.prediction      ?? null,
         mammoPredictionIndex: mammoResult?.prediction_index ?? null,
         mammoConfidence:      mammoResult?.confidence      ?? null,
         mammoProbabilities:   mammoResult?.probabilities   ?? null,
         mammoFindingCategory: mammoResult?.finding_category ?? null,
-        // density (null if ultrasound-only)
         densityClass:         densityResult?.density_class  ?? null,
         densityLabel:         densityResult?.density_label  ?? null,
         densityIndex:         densityResult?.density_index  ?? null,
         densityConfidence:    densityResult?.confidence     ?? null,
-        // ultrasound (if present)
         usPrediction:         usResult?.prediction          ?? null,
         usPredictionIndex:    usResult?.prediction_index    ?? null,
         usConfidence:         usResult?.confidence          ?? null,
         usProbabilities:      usResult?.probabilities       ?? null,
-        // risk
         riskLabel:            riskResult.risk_label,
         riskPercentage:       riskResult.risk_percentage,
         riskPrediction:       riskResult.prediction,
-        // images
         ccImageUrl:           ccImageUrl  ?? null,
         mloImageUrl:          mloImageUrl ?? null,
         ultrasoundUrl:        usImageUrl  ?? null,
         gradcamImage:         densityResult?.gradcam_image ?? null,
         scanLabel,
+        radiologistComment:   null, // filled in later if needsComment
       });
       setStep('saving', S.done);
 
       // ── Done ──────────────────────────────────────────────────────────────
-      stepIdx++;
-      setCurrentStep(stepIdx);
+      const doneIdx = stepIdx + 1;
+      setCurrentStep(doneIdx);
       setStep('done', S.done);
       await delay(300);
 
@@ -167,7 +173,8 @@ export default function ReportModal({
         riskPrediction:       riskResult.prediction,
         shapValues:           riskResult.shap_values,
         reportId,
-        // uploaded image URLs for verification
+        needsComment,         // flag — ResultView shows comment field when true
+        radiologistComment:   null,
         ccImageUrl:           ccImageUrl  ?? null,
         mloImageUrl:          mloImageUrl ?? null,
         usImageUrl:           usImageUrl  ?? null,
@@ -305,6 +312,32 @@ const COLOR_CLASSES = {
 function ResultView({ report, patient, scanLabel, onClose }) {
   const [showProbs, setShowProbs] = useState(false);
   const [expandedImg, setExpandedImg] = useState(null); // lightbox
+
+  // Radiologist comment state — only active when needsComment is true
+  const [comment,       setComment]       = useState('');
+  const [commentSaved,  setCommentSaved]  = useState(false);
+  const [commentSaving, setCommentSaving] = useState(false);
+  const [commentError,  setCommentError]  = useState('');
+
+  const needsComment = !!report.needsComment;
+  const canSubmit    = comment.trim().length >= 10;
+  const commentDone  = !needsComment || commentSaved;
+
+  const handleSubmitComment = async () => {
+    if (!canSubmit || commentSaving) return;
+    setCommentSaving(true);
+    setCommentError('');
+    try {
+      await updateDoc(doc(db, 'radiologist_reports', report.reportId), {
+        radiologistComment: comment.trim(),
+      });
+      setCommentSaved(true);
+    } catch (err) {
+      setCommentError('Failed to save comment. Please try again.');
+    } finally {
+      setCommentSaving(false);
+    }
+  };
 
   const isUsOnly    = !report.mammoPrediction && !report.densityClass && !!report.usPrediction;
   const hasMammo    = !!report.mammoPrediction;
@@ -603,11 +636,132 @@ function ResultView({ report, patient, scanLabel, onClose }) {
           </div>
         )}
 
+        {/* ── 5. Radiologist comment field — required when AI conf < 60 % ─── */}
+        {needsComment && (
+          <div className={`rounded-2xl border-2 overflow-hidden transition-colors ${
+            commentSaved
+              ? 'border-emerald-300 dark:border-emerald-700'
+              : 'border-amber-300 dark:border-amber-700'
+          }`}>
+            {/* Header */}
+            <div className={`flex items-center gap-2.5 px-4 py-3 border-b ${
+              commentSaved
+                ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
+                : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+            }`}>
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                commentSaved ? 'bg-emerald-500' : 'bg-amber-500'
+              }`}>
+                {commentSaved
+                  ? <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                  : <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-bold uppercase tracking-wide ${
+                  commentSaved ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+                }`}>
+                  {commentSaved ? 'Radiologist Comment Saved ✓' : 'Radiologist Comment Required'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {commentSaved
+                    ? 'Your interpretation has been attached to this report.'
+                    : 'AI confidence is below 60% — your clinical interpretation is mandatory before closing.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Comment body */}
+            {commentSaved ? (
+              <div className="px-4 py-3 bg-white dark:bg-gray-900">
+                <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                  {comment}
+                </p>
+              </div>
+            ) : (
+              <div className="px-4 py-4 bg-white dark:bg-gray-900 space-y-3">
+                {/* Why this is needed */}
+                <div className="flex items-start gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/40 rounded-xl px-3 py-2.5">
+                  <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-blue-700 dark:text-blue-300 text-xs leading-relaxed">
+                    Your interpretation will be shown to the referring doctor alongside the AI results.
+                    Describe your assessment, notable findings, and recommended next steps.
+                  </p>
+                </div>
+
+                {/* Textarea */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1.5">
+                    Your Clinical Interpretation <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={comment}
+                    onChange={e => setComment(e.target.value)}
+                    rows={4}
+                    placeholder="e.g. Image quality is suboptimal. The ultrasound shows a hypoechoic lesion in the upper outer quadrant. Given the low AI confidence, I recommend a follow-up ultrasound in 3 months with possible biopsy…"
+                    className={`w-full rounded-xl border-2 px-3 py-2.5 text-sm resize-none transition-colors focus:outline-none dark:bg-gray-800 dark:text-white ${
+                      comment.length > 0 && !canSubmit
+                        ? 'border-red-300 dark:border-red-700'
+                        : canSubmit
+                          ? 'border-emerald-400 dark:border-emerald-600'
+                          : 'border-gray-200 dark:border-gray-700 focus:border-violet-400'
+                    }`}
+                  />
+                  <div className="flex items-center justify-between mt-1">
+                    {comment.length > 0 && !canSubmit ? (
+                      <p className="text-xs text-red-500">⚠ Minimum 10 characters required.</p>
+                    ) : canSubmit ? (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400">✓ Ready to submit.</p>
+                    ) : (
+                      <span />
+                    )}
+                    <span className="text-xs text-gray-400 tabular-nums ml-auto">{comment.length} chars</span>
+                  </div>
+                </div>
+
+                {commentError && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <span>⚠</span> {commentError}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSubmitComment}
+                  disabled={!canSubmit || commentSaving}
+                  className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                    canSubmit && !commentSaving
+                      ? 'bg-gradient-to-r from-rose-500 to-violet-600 text-white hover:opacity-90'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  {commentSaving
+                    ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</>
+                    : <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Submit Comment</>
+                  }
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <p className="text-center text-xs text-gray-400 dark:text-gray-600">
           Report saved · ID: {report.reportId?.slice(-8)}
         </p>
 
-        <button onClick={onClose} className="btn-primary w-full py-3">Done</button>
+        {/* Done button — blocked until comment is submitted when required */}
+        {commentDone ? (
+          <button onClick={onClose} className="btn-primary w-full py-3">Done</button>
+        ) : (
+          <div className="space-y-2">
+            <button disabled className="w-full py-3 rounded-xl text-sm font-bold bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed flex items-center justify-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              Submit your comment above to close
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
